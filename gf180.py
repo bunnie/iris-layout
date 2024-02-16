@@ -2,8 +2,7 @@ import logging
 from techbase import TechBase
 
 class Tech(TechBase):
-    def __init__(self):
-        super().__init__()
+    def __init__(self, args):
         # cell types go by hue
         self.hue_lut = {
             'ff' : [0, 10],
@@ -25,74 +24,10 @@ class Tech(TechBase):
         self.sat_lut = {
             'default' : [32, 255],
         }
+        super().__init__(args)
 
-    # print some statistics -- just because it's interesting?
-    def gather_stats(self, schema, tech):
-        stats = {
-            'fill' : 0,
-            'antenna' : 0,
-            'tap' : 0,
-            'ff' : 0,
-            'logic' : 0,
-            'other' : 0,
-        }
-        stats_count = {
-            'fill' : 0,
-            'antenna' : 0,
-            'tap' : 0,
-            'ff' : 0,
-            'logic' : 0,
-            'other' : 0,
-        }
-        for cell, data in schema['cells'].items():
-            if 'FILLER' in cell:
-                try:
-                    s = tech.schema['cells'][data['cell']]['size']
-                    stats['fill'] += s[0] * s[1]
-                    stats_count['fill'] += 1
-                except:
-                    pass
-            elif 'ANTENNA' in cell:
-                try:
-                    s = tech.schema['cells'][data['cell']]['size']
-                    stats['antenna'] += s[0] * s[1]
-                    stats_count['antenna'] += 1
-                except:
-                    pass
-            elif 'TAP' in cell:
-                try:
-                    s = tech.schema['cells'][data['cell']]['size']
-                    stats['tap'] += s[0] * s[1]
-                    stats_count['tap'] += 1
-                except:
-                    pass
-            elif 'PHY' in cell:
-                try:
-                    s = tech.schema['cells'][data['cell']]['size']
-                    stats['other'] += s[0] * s[1]
-                    stats_count['other'] += 1
-                except:
-                    pass
-            else:
-                if 'ff' in data['cell']:
-                    try:
-                        s = tech.schema['cells'][data['cell']]['size']
-                        stats['ff'] += s[0] * s[1]
-                        stats_count['ff'] += 1
-                    except:
-                        logging.info(f"cell not found {data['cell']}")
-                else:
-                    try:
-                        s = tech.schema['cells'][data['cell']]['size']
-                        stats['logic'] += s[0] * s[1]
-                        stats_count['logic'] += 1
-                    except:
-                        logging.info(f"cell not found: {data['cell']}")
-
-        import pprint
-        pp = pprint.PrettyPrinter(indent=2)
-        pp.pprint(stats)
-        pp.pprint(stats_count)
+    def is_ff(self, cell_name):
+        return 'ff' in cell_name
 
     def map_name_to_celltype(self, cell_name):
         cell_name = cell_name.lower()
