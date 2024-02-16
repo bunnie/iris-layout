@@ -9,6 +9,7 @@ import re
 import cv2
 import sys
 import json
+import importlib.util
 
 from schema import Schema
 from prims import Rect, Point
@@ -20,6 +21,7 @@ DEF_TO_PIXELS_VERSION = '1.0.0'
 # be sure to re-calibrate after adjustments to the hardware.
 PIX_PER_UM_20X = 3535 / 370 # 20x objective
 PIX_PER_UM_5X = 2350 / 1000 # 5x objective, 3.94 +/- 0.005 ratio to 20x
+PIX_PER_UM_10X = 3330 / 700 # 10x objective, ~4.757 pix/um
 PIX_PER_UM = None
 
 def build_json(schema, df):
@@ -126,10 +128,13 @@ def main():
         "--def-file", required=True, help="DEF file containing the layout"
     )
     parser.add_argument(
-        "--tech", required=True, help="Path to tech directory"
+        "--tech", required=True, help="Technology name", choices=['gf180', 'sky130', 'tsmc22ull']
     )
     parser.add_argument(
-        "--mag", help="Magnification of target image", choices=['5x', '20x'], default='5x'
+        "--mag", help="Magnification of target image", choices=['5x', '10x', '20x'], default='10x'
+    )
+    parser.add_argument(
+        "--regenerate-lef", default=False, action="store_true", help="Force regeneration of LEF database"
     )
     args = parser.parse_args()
     numeric_level = getattr(logging, args.loglevel.upper(), None)
@@ -137,15 +142,23 @@ def main():
         raise ValueError('Invalid log level: %s' % args.loglevel)
     logging.basicConfig(level=numeric_level)
 
+    tech_module_spec = importlib.util.spec_from_file_location('Tech', f'./{args.tech}.py')
+    tech_module = importlib.util.module_from_spec(tech_module_spec)
+    tech_module_spec.loader.exec_module(tech_module)
+    tm = tech_module.Tech()
+
     if args.mag == '5x':
         PIX_PER_UM = PIX_PER_UM_5X
+    elif args.mag == '10x':
+        PIX_PER_UM = PIX_PER_UM_10X
     elif args.mag == '20x':
         PIX_PER_UM = PIX_PER_UM_20X
 
-    tech = Schema(Path(args.tech))
-    if not tech.read():
-        logging.error("Can't read db.json in tech directory. Did you run lef_extract.py first?")
-        exit(0)
+    tech = Schema('tech' / Path(args.tech))
+    if not tech.read() or args.regenerate_lef:
+        logging.info("Can't read db.json in tech directory; generating it automatically.")
+        tech.scan()
+        tech.overwrite()
 
     df = Path(args.def_file)
 
@@ -160,73 +173,7 @@ def main():
         with open(def_json, 'r') as db_file:
             schema = json.loads(db_file.read())
 
-    # print some statistics -- just because it's interesting?
-    # this is hard-coded for gf180 for the time being
-    stats = {
-        'fill' : 0,
-        'antenna' : 0,
-        'tap' : 0,
-        'ff' : 0,
-        'logic' : 0,
-        'other' : 0,
-    }
-    stats_count = {
-        'fill' : 0,
-        'antenna' : 0,
-        'tap' : 0,
-        'ff' : 0,
-        'logic' : 0,
-        'other' : 0,
-    }
-    for cell, data in schema['cells'].items():
-        if 'FILLER' in cell:
-            try:
-                s = tech.schema['cells'][data['cell']]['size']
-                stats['fill'] += s[0] * s[1]
-                stats_count['fill'] += 1
-            except:
-                pass
-        elif 'ANTENNA' in cell:
-            try:
-                s = tech.schema['cells'][data['cell']]['size']
-                stats['antenna'] += s[0] * s[1]
-                stats_count['antenna'] += 1
-            except:
-                pass
-        elif 'TAP' in cell:
-            try:
-                s = tech.schema['cells'][data['cell']]['size']
-                stats['tap'] += s[0] * s[1]
-                stats_count['tap'] += 1
-            except:
-                pass
-        elif 'PHY' in cell:
-            try:
-                s = tech.schema['cells'][data['cell']]['size']
-                stats['other'] += s[0] * s[1]
-                stats_count['other'] += 1
-            except:
-                pass
-        else:
-            if 'ff' in data['cell']:
-                try:
-                    s = tech.schema['cells'][data['cell']]['size']
-                    stats['ff'] += s[0] * s[1]
-                    stats_count['ff'] += 1
-                except:
-                    logging.info(f"cell not found {data['cell']}")
-            else:
-                try:
-                    s = tech.schema['cells'][data['cell']]['size']
-                    stats['logic'] += s[0] * s[1]
-                    stats_count['logic'] += 1
-                except:
-                    logging.info(f"cell not found: {data['cell']}")
-
-    import pprint
-    pp = pprint.PrettyPrinter(indent=2)
-    pp.pprint(stats)
-    pp.pprint(stats_count)
+    tm.gather_stats(schema, tech)
 
     # now generate a PNG of the cell map that we can use to manually overlay
     # on the stitched image to validate that our parsing makes sense.
@@ -235,7 +182,7 @@ def main():
     die = Rect(Point(die_ll[0], die_ll[1]), Point(die_ur[0], die_ur[1]))
 
     canvas = np.zeros((int(die.height() * PIX_PER_UM), int(die.width() * PIX_PER_UM), 3), dtype=np.uint8)
-    pallette = HashPallette()
+    pallette = HashPallette(tm)
     for cell, data in schema['cells'].items():
         color = pallette.str_to_rgb(data['cell'], data['orientation'])
         loc = data['loc']

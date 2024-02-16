@@ -6,6 +6,7 @@ import numpy as np
 import math
 from pathlib import Path
 import cv2
+import re
 
 class Schema():
     SCHEMA_VERSION = "1.0.0"
@@ -38,20 +39,25 @@ class Schema():
         cell = {}
         name = None
         for file in files:
+            if '.magic.lef' in str(file):
+                continue
             state = 'FIND_MACRO'
             with open(file, 'r') as lef_file:
                 for line in lef_file:
                     line = line.strip().lstrip()
                     if state == 'FIND_MACRO':
                         if 'MACRO' in line:
-                            name = line.split(' ')[1]
+                            name = re.split('\s+', line)[1]
                             cell = {} # reset the cell properties, they should have been saved by now
                             state = 'MACRO'
                     elif state == 'MACRO':
-                        tokens = line.split(' ')
+                        tokens = re.split('\s+', line)
                         if 'FOREIGN' in line:
                             cell['foreign_name'] = tokens[1]
-                            cell['foreign_origin'] = [float(tokens[2]), float(tokens[3])]
+                            if len(tokens) > 3:
+                                cell['foreign_origin'] = [float(tokens[2]), float(tokens[3])]
+                            else:
+                                cell['foreign_origin'] = [0.0, 0.0]
                         elif 'ORIGIN' in line:
                             cell['origin'] = [float(tokens[1]), float(tokens[2])]
                         elif 'SIZE' in line:

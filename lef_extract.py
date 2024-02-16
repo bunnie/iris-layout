@@ -1,5 +1,7 @@
 #! /usr/bin/env python3
 
+# NOTE: this is deprecated, use `def_to_pixels --regenerate-lef` to perform this function
+
 import argparse
 from pathlib import Path
 import logging
