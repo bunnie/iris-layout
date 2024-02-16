@@ -10,6 +10,7 @@ import cv2
 import sys
 import json
 import importlib.util
+from progressbar.bar import ProgressBar
 
 from schema import Schema
 from prims import Rect, Point
@@ -26,8 +27,16 @@ PIX_PER_UM = None
 
 def build_json(schema, df):
     with open(df, 'r') as def_file:
-        state = 'HEADER'
+        total_lines = 0
         for line in def_file:
+            total_lines += 1
+    with open(df, 'r') as def_file:
+        state = 'HEADER'
+        progress = ProgressBar(min_value = 0, max_value = total_lines, prefix='Processing...')
+        processed_lines = 0
+        for line in def_file:
+            processed_lines += 1
+            progress.update(processed_lines)
             line = line.strip().lstrip()
             tokens = line.split(' ')
             if state == 'HEADER':
@@ -115,6 +124,7 @@ def build_json(schema, df):
                                 skip = True
                             comp_state = 'SEARCH'
 
+        progress.finish()
         with open(df.stem + '.json', 'w+') as def_out:
             def_out.write(json.dumps(schema, indent=2))
 
@@ -168,13 +178,16 @@ def main():
             'version': DEF_TO_PIXELS_VERSION,
             'cells' : {},
         }
+        logging.info("building json from def...")
         build_json(schema, df)
     else:
         with open(def_json, 'r') as db_file:
             schema = json.loads(db_file.read())
 
+    logging.info("gathering stats...")
     tm.gather_stats(schema, tech)
 
+    logging.info("generating image...")
     # now generate a PNG of the cell map that we can use to manually overlay
     # on the stitched image to validate that our parsing makes sense.
     die_ll = schema['die_area_ll']
@@ -206,9 +219,8 @@ def main():
             color,
             thickness = -1,
         )
-    #cv2.imshow("preview", canvas)
-    #cv2.waitKey()
     cv2.imwrite(df.stem + '.png', canvas)
+    logging.info("generating legend...")
     pallette.generate_legend(df.stem + '_legend.png')
 
 if __name__ == "__main__":

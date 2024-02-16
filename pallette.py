@@ -1,6 +1,7 @@
 import numpy as np
 import cv2
 import logging
+from math import ceil, floor, sqrt
 
 class HashPallette():
     def __init__(self, tech):
@@ -81,17 +82,27 @@ class HashPallette():
         font_scale = 1.0
         thickness = 1
         font_face = cv2.FONT_HERSHEY_PLAIN
-        ((_w, th), baseline) = cv2.getTextSize("The Quick Brown Fox Jumps Over the Lazy Dogs", font_face, font_scale, thickness)
-        spacing = int(th + baseline)
         k = sorted(self.lut.keys())
-        canvas = np.zeros((spacing * (len(k) + 2), 500, 3))
-        y = spacing
+        longest_name = ''
+        for n in k:
+            if len(n) > len(longest_name):
+                longest_name = n
+        ((w, th), baseline) = cv2.getTextSize(longest_name, font_face, font_scale, thickness)
+        v_spacing = int(th + baseline)
+        h_spacing = int(w * 1.15)
+        single_col_height = (v_spacing * (len(k) + 2))
+        desired_ratio = 16/9
+        cols = ceil(sqrt(single_col_height / (desired_ratio * h_spacing)))
+        wrap_height = floor(single_col_height / cols)
+        canvas = np.zeros((wrap_height, cols * h_spacing, 3))
+        y = v_spacing
+        x = 0
         for n in k:
             color = self.lut[n]
             cv2.rectangle(
                 canvas,
-                (5,y),
-                (50, y+th),
+                (x + 5,y),
+                (x + 50, y+th),
                 color,
                 thickness = -1,
                 lineType = cv2.LINE_4
@@ -99,12 +110,15 @@ class HashPallette():
             cv2.putText(
                 canvas,
                 n,
-                (65, y+th),
+                (x + 65, y+th),
                 font_face,
                 font_scale,
                 (255, 255, 255),
                 thickness,
                 bottomLeftOrigin=False
             )
-            y += spacing
+            y += v_spacing
+            if y > wrap_height:
+                x += h_spacing
+                y = v_spacing
         cv2.imwrite(fname, canvas)
