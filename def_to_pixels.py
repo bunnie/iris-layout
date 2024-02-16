@@ -60,6 +60,7 @@ def main():
     elif args.mag == '20x':
         PIX_PER_UM = PIX_PER_UM_20X
 
+    design_path = Path(args.def_file).parent
     top_def = Design(args.def_file, PIX_PER_UM)
 
     logging.info("gathering top level stats...")
@@ -71,16 +72,20 @@ def main():
     die_ll = top_def.schema['die_area_ll']
     die_ur = top_def.schema['die_area_ur']
     die = Rect(Point(die_ll[0], die_ll[1]), Point(die_ur[0], die_ur[1]))
-
     canvas = np.zeros((int(die.height() * PIX_PER_UM), int(die.width() * PIX_PER_UM), 3), dtype=np.uint8)
 
-    top_def.render_layer(tm, canvas)
+    missing_cells = top_def.render_layer(tm)
+    for missing_cell in missing_cells:
+        d = Design(design_path / (missing_cell['cell'] + '.def'), PIX_PER_UM)
+        tm.gather_stats(d)
+        d.render_layer(tm)
+        top_def.merge_subdesign(d, missing_cell)
 
     logging.info("generating legend...")
     top_def.generate_legend(tm)
-    top_def.save_layout(canvas)
-    # pallette.generate_legend(str(df.with_name(df.stem + '_legend.png')))
 
+    # final output artifacts
+    top_def.save_layout()
     tm.print_stats()
 
 if __name__ == "__main__":
