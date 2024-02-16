@@ -209,6 +209,7 @@ def main():
     #cv2.imshow("preview", canvas)
     #cv2.waitKey()
     cv2.imwrite(df.stem + '.png', canvas)
+    pallette.generate_legend(df.stem + '_legend.png')
 
 if __name__ == "__main__":
     main()

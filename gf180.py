@@ -1,23 +1,26 @@
 import logging
+from techbase import TechBase
 
-class Tech():
+class Tech(TechBase):
     def __init__(self):
+        super().__init__()
+        # cell types go by hue
         self.hue_lut = {
             'ff' : [0, 10],
             'lat' : [11, 20],
             'clk' : [21, 30],
+            'add' : [51, 60],
             'aoi' : [31, 40],
             'oai' : [41, 50],
-            'add' : [51, 60],
             'buf' : [61, 70],
             'and' : [71, 80],
             'or'  : [81, 90],
-            'buf' : [91, 100],
             'inv' : [101, 110],
             'dly' : [111, 120],
             'fill' : [150, 169],
             'other' : [170, 180]
         }
+        # cell family goes by saturation
         self.sat_lut = {
             'default' : [32, 255],
         }
@@ -90,16 +93,12 @@ class Tech():
         pp.pprint(stats)
         pp.pprint(stats_count)
 
-    def hue_ranges(self):
-        return self.hue_lut
-    def sat_ranges(self):
-        return self.sat_lut
-
     def map_name_to_celltype(self, cell_name):
+        cell_name = cell_name.lower()
         mn = 'other' # clamp all unknown names to "other"
         mapped_names = self.hue_lut.keys()
         for subtype in mapped_names:
-            if subtype in cell_name.lower():
+            if subtype in cell_name:
                 mn = subtype
                 break
         return mn

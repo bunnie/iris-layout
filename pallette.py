@@ -76,3 +76,35 @@ class HashPallette():
             if r_x == r and g_x == g and b_x == b:
                 return name
         return None
+
+    def generate_legend(self, fname):
+        font_scale = 1.0
+        thickness = 1
+        font_face = cv2.FONT_HERSHEY_PLAIN
+        ((_w, th), baseline) = cv2.getTextSize("The Quick Brown Fox Jumps Over the Lazy Dogs", font_face, font_scale, thickness)
+        spacing = int(th + baseline)
+        k = sorted(self.lut.keys())
+        canvas = np.zeros((spacing * (len(k) + 2), 500, 3))
+        y = spacing
+        for n in k:
+            color = self.lut[n]
+            cv2.rectangle(
+                canvas,
+                (5,y),
+                (50, y+th),
+                color,
+                thickness = -1,
+                lineType = cv2.LINE_4
+            )
+            cv2.putText(
+                canvas,
+                n,
+                (65, y+th),
+                font_face,
+                font_scale,
+                (255, 255, 255),
+                thickness,
+                bottomLeftOrigin=False
+            )
+            y += spacing
+        cv2.imwrite(fname, canvas)
