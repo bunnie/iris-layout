@@ -267,6 +267,10 @@ class Design():
                     break
             progress.finish()
 
+            logging.info("Saving to json (may take a while)...")
+            with open(self.design_json, 'w+') as def_out:
+                def_out.write(json.dumps(self.schema, indent=2))
+
     def __init__(self, file_path, pix_per_um):
         self.pix_per_um = pix_per_um
         self.df = Path(file_path)
