@@ -94,7 +94,7 @@ class HashPallette():
         desired_ratio = 16/9
         cols = ceil(sqrt(single_col_height / (desired_ratio * h_spacing)))
         wrap_height = floor(single_col_height / cols)
-        canvas = np.zeros((wrap_height, cols * h_spacing, 3))
+        canvas = np.zeros((wrap_height + v_spacing, cols * h_spacing, 3))
         y = v_spacing
         x = 0
         for n in k:
