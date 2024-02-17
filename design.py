@@ -11,6 +11,10 @@ from pathlib import Path
 
 from prims import Rect, Point
 
+# GDS parser based off of https://github.com/mikaeloduh/gds2ascii-tool-project
+# Note: this repo has no explicit license, so I just used the general structure
+# and facts and expressed it in my own style.
+
 DEF_TO_PIXELS_VERSION = '1.0.0'
 
 class Design():
