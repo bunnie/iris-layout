@@ -60,26 +60,16 @@ def main():
     elif args.mag == '20x':
         PIX_PER_UM = PIX_PER_UM_20X
 
-    design_path = Path(args.def_file).parent
     top_def = Design(args.def_file, PIX_PER_UM)
 
-    logging.info("gathering top level stats...")
     tm.gather_stats(top_def)
-
     logging.info("generating image...")
-    # now generate a PNG of the cell map that we can use to manually overlay
-    # on the stitched image to validate that our parsing makes sense.
-    die_ll = top_def.schema['die_area_ll']
-    die_ur = top_def.schema['die_area_ur']
-    die = Rect(Point(die_ll[0], die_ll[1]), Point(die_ur[0], die_ur[1]))
-    canvas = np.zeros((int(die.height() * PIX_PER_UM), int(die.width() * PIX_PER_UM), 3), dtype=np.uint8)
 
+    # render the base case
     missing_cells = top_def.render_layer(tm)
-    for missing_cell in missing_cells:
-        d = Design(design_path / (missing_cell['cell'] + '.def'), PIX_PER_UM)
-        tm.gather_stats(d)
-        d.render_layer(tm)
-        top_def.merge_subdesign(d, missing_cell)
+    if len(missing_cells) > 0:
+        # recurse through missing cells
+        top_def.generate_missing(missing_cells, tm)
 
     logging.info("generating legend...")
     top_def.generate_legend(tm)

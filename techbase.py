@@ -26,8 +26,8 @@ class TechBase():
         self.tech = Schema('tech' / Path(self.tech_name))
         if not self.tech.read() or args.regenerate_lef:
             logging.info("Can't read db.json in tech directory; generating it automatically.")
-            args.tech.scan()
-            args.tech.overwrite()
+            self.tech.scan()
+            self.tech.overwrite()
         self.pallette = HashPallette(self)
 
     def hue_ranges(self):
@@ -73,14 +73,14 @@ class TechBase():
                         self.stats['ff'] += s[0] * s[1]
                         self.stats_count['ff'] += 1
                     except:
-                        logging.info(f"cell not found {data['cell']}")
+                        logging.debug(f"non-primitive cell: {data['cell']}")
                 else:
                     try:
                         s = self.tech.schema['cells'][data['cell']]['size']
                         self.stats['logic'] += s[0] * s[1]
                         self.stats_count['logic'] += 1
                     except:
-                        logging.info(f"cell not found: {data['cell']}")
+                        logging.debug(f"non-primitive cell: {data['cell']}")
 
     def print_stats(self):
             pp = pprint.PrettyPrinter(indent=2)

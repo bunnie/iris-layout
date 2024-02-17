@@ -120,18 +120,27 @@ class Design():
     def __init__(self, file_path, pix_per_um):
         self.pix_per_um = pix_per_um
         self.df = Path(file_path)
+        self.extension = self.df.suffix
+        self.design_path = Path(file_path).parent
+        self.name = self.df.stem
 
-        self.def_json = self.df.with_name(self.df.stem + '.json')
-        if not self.def_json.is_file():
-            self.schema = {
-                'version': DEF_TO_PIXELS_VERSION,
-                'cells' : {},
-            }
-            logging.info("building json from def...")
-            self.build_json()
+        if self.extension == 'def':
+            self.def_json = self.df.with_name(self.df.stem + '.json')
+            if not self.def_json.is_file():
+                self.schema = {
+                    'version': DEF_TO_PIXELS_VERSION,
+                    'cells' : {},
+                }
+                logging.info("building json from def...")
+                self.build_json()
+            else:
+                with open(self.def_json, 'r') as db_file:
+                    self.schema = json.loads(db_file.read())
+        elif self.extension == 'gds':
+            pass
         else:
-            with open(self.def_json, 'r') as db_file:
-                self.schema = json.loads(db_file.read())
+            logging.error(f"Unhandled design extension {self.extension}")
+            assert False
 
         die_ll = self.schema['die_area_ll']
         die_ur = self.schema['die_area_ur']
@@ -139,18 +148,20 @@ class Design():
         self.canvas = np.zeros((int(die.height() * self.pix_per_um), int(die.width() * self.pix_per_um), 3), dtype=np.uint8)
 
     def render_layer(self, tech):
-        progress = ProgressBar(min_value = 0, max_value=len(self.schema['cells'].keys()), prefix='Rendering layout...')
+        do_progress = len(self.schema['cells'].keys()) > 1000
+        if do_progress:
+            progress = ProgressBar(min_value = 0, max_value=len(self.schema['cells'].keys()), prefix='Rendering layout...')
         count = 0
         missing_cells = []
         for cell, data in self.schema['cells'].items():
             count += 1
-            progress.update(count)
+            if do_progress:
+                progress.update(count)
             color = tech.pallette.str_to_rgb(data['cell'], data['orientation'])
             loc = data['loc']
             try:
                 cell_size = tech.tech.schema['cells'][data['cell']]['size']
             except:
-                logging.warning(f"Cell not found: {data['cell']}")
                 missing_cells += [data]
                 continue
             tl = (
@@ -168,7 +179,8 @@ class Design():
                 color,
                 thickness = -1,
             )
-        progress.finish()
+        if do_progress:
+            progress.finish()
         return missing_cells
 
     def generate_legend(self, tech):
@@ -200,8 +212,41 @@ class Design():
 
     def merge_subdesign(self, d, info):
         img = d.get_layout(orientation=info['orientation'])
-        self.canvas[
-            int(info['loc'][1] * self.pix_per_um) : int(info['loc'][1] * self.pix_per_um) + img.shape[0],
-            int(info['loc'][0] * self.pix_per_um) : int(info['loc'][0] * self.pix_per_um) + img.shape[1],
-            :
-        ] = img
+        if False:
+            self.canvas[
+                int(info['loc'][1] * self.pix_per_um) : int(info['loc'][1] * self.pix_per_um) + img.shape[0],
+                int(info['loc'][0] * self.pix_per_um) : int(info['loc'][0] * self.pix_per_um) + img.shape[1],
+                :
+            ] = img
+        else:
+            try:
+                merged = cv2.addWeighted(self.canvas[
+                    int(info['loc'][1] * self.pix_per_um) : int(info['loc'][1] * self.pix_per_um) + img.shape[0],
+                    int(info['loc'][0] * self.pix_per_um) : int(info['loc'][0] * self.pix_per_um) + img.shape[1],
+                    :
+                ], 1.0, img, 1.0, 0.0)
+                self.canvas[
+                    int(info['loc'][1] * self.pix_per_um) : int(info['loc'][1] * self.pix_per_um) + img.shape[0],
+                    int(info['loc'][0] * self.pix_per_um) : int(info['loc'][0] * self.pix_per_um) + img.shape[1],
+                    :
+                ] = merged
+            except:
+                logging.warning(f"Couldn't merge sub-block {d.name} into {self.name}")
+
+    def generate_missing(self, missing_cells, tm):
+        for missing_cell in missing_cells:
+            def_file = self.design_path / (missing_cell['cell'] + '.def')
+            if def_file.exists(): # prefer DEF over GDS
+                d = Design(def_file, self.pix_per_um)
+            else:
+                gds_file = self.design_path / (missing_cell['cell'] + '.gds')
+                if gds_file.exists():
+                    d = Design(def_file, self.pix_per_um)
+                else:
+                    logging.warning(f"Couldn't find design file for {missing_cell['cell']}")
+                    continue
+            tm.gather_stats(d)
+            next_missing = d.render_layer(tm)
+            if len(next_missing) > 0:
+                d.generate_missing(next_missing, tm)
+            self.merge_subdesign(d, missing_cell)
