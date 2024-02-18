@@ -385,7 +385,7 @@ class Design():
         return missing_cells
 
     def generate_legend(self, tech):
-        tech.pallette.generate_legend(str(self.df.with_name(self.df.stem + '_legend.png')))
+        tech.pallette.generate_legend(str(self.df.with_name(self.df.stem)))
 
     def save_layout(self):
         cv2.imwrite(str(self.df.with_name(self.df.stem + '.png')), self.canvas)

@@ -78,27 +78,27 @@ class HashPallette():
                 return name
         return None
 
-    def generate_legend(self, fname):
+    def _generate_core(self, fname, display_names, key_names):
         font_scale = 1.0
         thickness = 1
         font_face = cv2.FONT_HERSHEY_PLAIN
-        k = sorted(self.lut.keys())
+
         longest_name = ''
-        for n in k:
+        for n in display_names:
             if len(n) > len(longest_name):
                 longest_name = n
         ((w, th), baseline) = cv2.getTextSize(longest_name, font_face, font_scale, thickness)
         v_spacing = int(th + baseline)
         h_spacing = int(w * 1.15)
-        single_col_height = (v_spacing * (len(k) + 2))
+        single_col_height = (v_spacing * (len(display_names) + 2))
         desired_ratio = 16/9
         cols = ceil(sqrt(single_col_height / (desired_ratio * h_spacing)))
         wrap_height = floor(single_col_height / cols)
         canvas = np.zeros((wrap_height + v_spacing, cols * h_spacing, 3))
         y = v_spacing
         x = 0
-        for n in k:
-            color = self.lut[n]
+        for (i, n) in enumerate(display_names):
+            color = self.lut[key_names[i]]
             cv2.rectangle(
                 canvas,
                 (x + 5,y),
@@ -122,3 +122,14 @@ class HashPallette():
                 x += h_spacing
                 y = v_spacing
         cv2.imwrite(fname, canvas)
+
+    def generate_legend(self, fname_stem):
+        long_k = sorted(self.lut.keys())
+        sk = []
+        rk = []
+        for lk in long_k:
+            sk += [self.tech.shorten_cellname(lk)]
+            rk += [self.tech.redact_cellname(lk)]
+
+        self._generate_core(fname_stem + '_legend.png', sk, long_k)
+        self._generate_core(fname_stem + '_redacted_legend.png', rk, long_k)

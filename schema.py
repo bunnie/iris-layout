@@ -60,7 +60,7 @@ class Schema():
                                 cell['foreign_origin'] = [0.0, 0.0]
                         elif 'ORIGIN' in line:
                             cell['origin'] = [float(tokens[1]), float(tokens[2])]
-                        elif 'SIZE' in line:
+                        elif line.startswith('SIZE'):
                             cell['size'] = [float(tokens[1]), float(tokens[3])]
                         if 'END' in line and len(tokens) > 1 and tokens[1] == name:
                             self.schema['cells'][name] = cell

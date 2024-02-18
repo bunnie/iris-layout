@@ -90,3 +90,6 @@ class Tech(TechBase):
                 return 'other'
         else:
             return 'other'
+
+    def shorten_cellname(self, name):
+        return name.replace('sky130_fd_', '').replace('sc_', '')

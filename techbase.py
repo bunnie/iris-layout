@@ -3,6 +3,7 @@ import logging
 from pathlib import Path
 from schema import Schema
 from pallette import HashPallette
+import hashlib
 
 class TechBase():
     def __init__(self, args):
@@ -88,3 +89,11 @@ class TechBase():
             pp.pprint(self.stats)
             logging.info("By count:")
             pp.pprint(self.stats_count)
+
+    def shorten_cellname(self, name):
+        return name
+
+    def redact_cellname(self, name):
+        m = hashlib.sha256()
+        m.update(name.encode('utf-8'))
+        return m.hexdigest()[:20]
