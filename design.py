@@ -361,6 +361,7 @@ class Design():
         die_ur = self.schema['die_area_ur']
         die = Rect(Point(die_ll[0], die_ll[1]), Point(die_ur[0], die_ur[1]))
         self.canvas = np.zeros((int(die.height() * self.pix_per_um), int(die.width() * self.pix_per_um), 3), dtype=np.uint8)
+        self.functions = np.zeros((int(die.height() * self.pix_per_um), int(die.width() * self.pix_per_um), 3), dtype=np.uint8)
 
     def render_layer(self, tech):
         do_progress = len(self.schema['cells'].keys()) > 1000
@@ -398,58 +399,111 @@ class Design():
             progress.finish()
         return missing_cells
 
+    def render_function_cluster(self, tech, name, data):
+        missing_cells = []
+        color = tech.pallette.function_to_rgb(name)
+        if type(data) is list:
+            for leaf in data:
+                try:
+                    cell_size = tech.tech.schema['cells'][leaf.cell]['size']
+                except:
+                    missing_cells += [data]
+                    continue
+                tl = (
+                    int(leaf.loc[0] * self.pix_per_um),
+                    int((leaf.loc[1] + cell_size[1]) * self.pix_per_um),
+                )
+                br = (
+                    int((leaf.loc[0] + cell_size[0]) * self.pix_per_um),
+                    int(leaf.loc[1] * self.pix_per_um),
+                )
+                cv2.rectangle(
+                    self.functions,
+                    tl,
+                    br,
+                    color,
+                    thickness = -1,
+                )
+        else:
+            for (_k, v) in data.items():
+                missing_cells += self.render_function_cluster(tech, name, v)
+        return missing_cells
+
+    def render_function(self, tech):
+        mc = []
+        do_progress = self.total_cells > 1000
+        if do_progress:
+            progress = ProgressBar(min_value=0, max_value=self.total_cells, prefix='Rendering functions...')
+        cells_processed = 0
+        for region_name, region_data in self.clusters.items():
+            if do_progress:
+                progress.update(cells_processed)
+            if region_name == '/top':
+                (count, _depth) = self.recurse_tree_depth(region_data, 0)
+                cells_processed += count
+                continue # don't render the top items
+            else:
+                mc = self.render_function_cluster(tech, region_name, region_data)
+        if do_progress:
+            progress.finish()
+        return mc
+
     def generate_legend(self, tech):
         tech.pallette.generate_legend(str(self.df.with_name(self.df.stem)))
         tech.pallette.save(str(self.df.with_name(self.df.stem)) + '_pallette.json')
 
     def save_layout(self):
         cv2.imwrite(str(self.df.with_name(self.df.stem + '.png')), self.canvas)
+        cv2.imwrite(str(self.df.with_name(self.df.stem + '_function.png')), self.functions)
 
-    def get_layout(self, orientation='N'):
+    def get_layout(self, orientation='N', function=False):
+        if function:
+            canvas = self.functions
+        else:
+            canvas = self.canvas
+
         if orientation == 'N':
-            return self.canvas
+            return canvas
         elif orientation == 'S':
-            return cv2.rotate(self.canvas, cv2.ROTATE_180)
+            return cv2.rotate(canvas, cv2.ROTATE_180)
         elif orientation == 'W':
-            return cv2.rotate(self.canvas, cv2.ROTATE_90_COUNTERCLOCKWISE)
+            return cv2.rotate(canvas, cv2.ROTATE_90_COUNTERCLOCKWISE)
         elif orientation == 'E':
-            return cv2.rotate(self.canvas, cv2.ROTATE_90_CLOCKWISE)
+            return cv2.rotate(canvas, cv2.ROTATE_90_CLOCKWISE)
         elif orientation == 'FN':
-            return cv2.flip(self.canvas, 1)
+            return cv2.flip(canvas, 1)
         elif orientation == 'FS':
-            return cv2.flip(cv2.rotate(self.canvas, cv2.ROTATE_180), 1)
+            return cv2.flip(cv2.rotate(canvas, cv2.ROTATE_180), 1)
         elif orientation == 'FW':
-            return cv2.flip(cv2.rotate(self.canvas, cv2.ROTATE_90_COUNTERCLOCKWISE), 1)
+            return cv2.flip(cv2.rotate(canvas, cv2.ROTATE_90_COUNTERCLOCKWISE), 1)
         elif orientation == 'FE':
-            return cv2.flip(cv2.rotate(self.canvas, cv2.ROTATE_90_CLOCKWISE), 1)
+            return cv2.flip(cv2.rotate(canvas, cv2.ROTATE_90_CLOCKWISE), 1)
         else:
             logging.error(f"unknown orientation: {orientation}")
             assert False # cause a crash
 
-    def merge_subdesign(self, d, info):
-        img = d.get_layout(orientation=info['orientation'])
-        if False:
-            self.canvas[
+    def merge_subdesign(self, d, info, function=False):
+        img = d.get_layout(orientation=info['orientation'], function=function)
+
+        if function:
+            canvas = self.functions
+        else:
+            canvas = self.canvas
+        try:
+            merged = cv2.addWeighted(canvas[
                 int(info['loc'][1] * self.pix_per_um) : int(info['loc'][1] * self.pix_per_um) + img.shape[0],
                 int(info['loc'][0] * self.pix_per_um) : int(info['loc'][0] * self.pix_per_um) + img.shape[1],
                 :
-            ] = img
-        else:
-            try:
-                merged = cv2.addWeighted(self.canvas[
-                    int(info['loc'][1] * self.pix_per_um) : int(info['loc'][1] * self.pix_per_um) + img.shape[0],
-                    int(info['loc'][0] * self.pix_per_um) : int(info['loc'][0] * self.pix_per_um) + img.shape[1],
-                    :
-                ], 1.0, img, 1.0, 0.0)
-                self.canvas[
-                    int(info['loc'][1] * self.pix_per_um) : int(info['loc'][1] * self.pix_per_um) + img.shape[0],
-                    int(info['loc'][0] * self.pix_per_um) : int(info['loc'][0] * self.pix_per_um) + img.shape[1],
-                    :
-                ] = merged
-            except:
-                logging.warning(f"Couldn't merge sub-block {d.name} into {self.name}")
+            ], 1.0, img, 1.0, 0.0)
+            canvas[
+                int(info['loc'][1] * self.pix_per_um) : int(info['loc'][1] * self.pix_per_um) + img.shape[0],
+                int(info['loc'][0] * self.pix_per_um) : int(info['loc'][0] * self.pix_per_um) + img.shape[1],
+                :
+            ] = merged
+        except:
+            logging.warning(f"Couldn't merge sub-block {d.name} into {self.name}")
 
-    def generate_missing(self, missing_cells, tm):
+    def generate_missing(self, missing_cells, tm, function=False):
         for missing_cell in missing_cells:
             def_file = self.design_path / (missing_cell['cell'] + '.def')
             if def_file.exists(): # prefer DEF over GDS
@@ -462,10 +516,13 @@ class Design():
                     logging.warning(f"Couldn't find design file for {missing_cell['cell']}")
                     continue
             tm.gather_stats(d)
-            next_missing = d.render_layer(tm)
+            if function:
+                next_missing = d.render_function(tm)
+            else:
+                next_missing = d.render_layer(tm)
             if len(next_missing) > 0:
-                d.generate_missing(next_missing, tm)
-            self.merge_subdesign(d, missing_cell)
+                d.generate_missing(next_missing, tm, function)
+            self.merge_subdesign(d, missing_cell, function)
 
     def is_leaf(self, item):
         return type(item) is dict and len(item) == 3 and 'cell' in item and 'loc' in item and 'orientation' in item
@@ -502,7 +559,7 @@ class Design():
             'top': []
         }
         self.total_cells = len(sorted_keys)
-        progress = ProgressBar(min_value=0, max_value=self.total_cells)
+        progress = ProgressBar(min_value=0, max_value=self.total_cells, prefix='Extracting hierarchy...')
         for i, sk in enumerate(sorted_keys):
             progress.update(i)
             levels = sk.split('/')
@@ -511,8 +568,6 @@ class Design():
             else:
                 self.recursive_populate(sk, levels, self.h)
         progress.finish()
-        #with open("dump.json", "w") as d:
-        #    d.write(json.dumps(self.h, indent=2, default=vars))
 
     def recurse_tree_depth(self, cur_level, depth):
         max_depth = depth
@@ -527,7 +582,7 @@ class Design():
                     max_depth = d
         return count, max_depth
 
-    def cluster_hierarchy(self, maxgroups= 150, mingroups= 16):
+    def cluster_hierarchy(self, maxgroups= 180, mingroups= 16):
         self.clusters = {}
         self.threshold = 200_000
         self.maxgroups = maxgroups
@@ -535,13 +590,15 @@ class Design():
         tries = 0
         while True:
             self.recurse_cluster_hierarchy(self.h, '')
-            if len(self.clusters) < self.maxgroups and len(self.clusters) > mingroups:
+            cluster_count = len(self.clusters)
+            if cluster_count < self.maxgroups and cluster_count > mingroups:
                 break
-            print(f"Retry {tries}, thresh {self.threshold}, groups {len(self.clusters)}")
+            print(f"Re-cluster try {tries}, thresh {self.threshold}, groups {cluster_count}")
+            tries += 1
             self.clusters = {}
-            if len(self.clusters) >= self.maxgroups:
+            if cluster_count >= self.maxgroups:
                 self.threshold += 10_000
-            elif len(self.clusters) <= self.mingroups:
+            elif cluster_count <= self.mingroups:
                 if self.threshold > 10_000:
                     self.threshold -= 10_000
                 elif self.threshold > 1000:
@@ -555,6 +612,8 @@ class Design():
         # with open("dump2.json", "w") as d:
         #    d.write(json.dumps(self.clusters, indent=2, default=vars))
 
+        self.total_func_regions = len(self.clusters) - 1  # 'top' is not counted
+
     def recurse_cluster_hierarchy(self, at_level, path):
         for k, v in at_level.items():
             (count, depth) = self.recurse_tree_depth(v, 0)
@@ -566,58 +625,3 @@ class Design():
                 else:
                     self.clusters[path + '/' + k] = self.flatten_region(v)
 
-
-
-    def print_hierarchy(self):
-        h = {}
-        paths = self.schema['cells'].keys()
-        for path in paths:
-            hier = path.split('/')
-            if len(hier) == 1:
-                h[hier[0]] = self.schema['cells'][path]
-            elif len(hier) == 2:
-                if hier[0] not in h:
-                    h[hier[0]] = {}
-                h[hier[0]][hier[1]] = self.schema['cells'][path]
-            else:
-                if hier[0] not in h:
-                    h[hier[0]] = {}
-                if hier[1] not in h[hier[0]]:
-                    h[hier[0]][hier[1]] = {}
-                if hier[2] not in h[hier[0]][hier[1]]:
-                    remaining_path = ''
-                    first = True
-                    for p in hier[2:]:
-                        if not first:
-                            remaining_path += '/'
-                        remaining_path += p
-                        first = False
-                    h[hier[0]][hier[1]][remaining_path] = self.schema['cells'][path]
-
-        #with open("dump.json", "w") as d:
-        #    d.write(json.dumps(h, indent=2))
-        bins = {
-            'fill' : [],
-            'misc' : []
-        }
-        for (_l1k, l1v) in h.items():
-            if self.is_leaf(l1v):
-                bins['fill'] += [l1v] # all top-level leaves are fill
-            else:
-                for (l2k, l2v) in l1v.items():
-                    if self.is_leaf(l2v):
-                        bins['fill'] += [l2v] # these are probably also fill
-                    else:
-                        if len(l2v) > 250:
-                            region = l2k
-                            bins[region] = self.flatten_region(l2v)
-                        else:
-                            for (l3k, l3v) in l2v.items():
-                                if self.is_leaf(l3v):
-                                    bins['misc'] += [l3v]
-                                else:
-                                    bins[l3k] = self.flatten_region(l3v)
-
-        print(f"regions: {len(bins)}")
-        for b in bins.keys():
-            print(b)

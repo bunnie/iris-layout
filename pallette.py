@@ -7,7 +7,7 @@ from math import ceil, floor, sqrt
 class HashPallette():
     def __init__(self, tech):
         self.tech = tech
-        self.lut = {}
+        self.lut = {} # this stores RGB values
         self.hue_ranges = tech.hue_ranges()
         self.sat_ranges = tech.sat_ranges()
         self.next_color = {}
@@ -18,6 +18,11 @@ class HashPallette():
                     self.next_color[family][name] = [range[0], srange[1], 255]
                 else: # desaturate fill and other
                     self.next_color[family][name] = [range[0], 32, 32]
+
+        self.function_lut = {} # this stores HSV values for $reasons
+        self.function_cur_hsv = (0, 255, 255)
+        self.func_region_count = 0
+        self.h_inc = 1
 
     # Map standard cells to colors.
     # Names are mapped into H/S space of HSV
@@ -77,6 +82,8 @@ class HashPallette():
             'hue_ranges': self.hue_ranges,
             "sat_ranges": self.sat_ranges,
             "next_color": self.next_color,
+            "function_lut" : self.function_lut,
+            "f_cur_hsv": self.function_cur_hsv,
         }
         with open(fname, 'w') as f:
             f.write(json.dumps(save_struct, indent=2))
@@ -89,7 +96,41 @@ class HashPallette():
                 return name
         return None
 
-    def _generate_core(self, fname, display_names, key_names):
+    def set_func_count(self, f):
+        self.func_region_count = f
+        h_inc = floor(180 / self.func_region_count)
+        if floor(180 / self.func_region_count) > 0:
+            self.h_inc = h_inc
+        else:
+            self.h_inc = 1
+
+    def function_to_rgb(self, func):
+        if func not in self.function_lut:
+            self.function_lut[func] = self.function_cur_hsv
+            (h, s, v) = self.function_cur_hsv
+            # compute the next color
+            h = h + self.h_inc
+            if h >= 180:
+                logging.warning("Function mapping ran out of color space, wrapping colors!")
+                h = 0
+                v = v - 32
+                if v < 0:
+                    logging.warning("Wrapping v around, you might want to rethink the granularity of the function mapping!")
+                    v = 255
+            # alternate s-values to make more perceptual distance between adjacent hues
+            if s == 255:
+                s = 85
+            elif s == 85:
+                s = 170
+            else:
+                s = 255
+            self.function_cur_hsv = (h, s, v)
+
+        rgb_color = cv2.cvtColor(np.array([[self.function_lut[func]]], dtype=np.uint8), cv2.COLOR_HSV2RGB)[0][0]
+        return (float(rgb_color[0]), float(rgb_color[1]), float(rgb_color[2]))
+
+    # key_names == None implies rendering of the function lut
+    def _generate_core(self, fname, display_names, key_names=None):
         font_scale = 1.0
         thickness = 1
         font_face = cv2.FONT_HERSHEY_PLAIN
@@ -109,7 +150,11 @@ class HashPallette():
         y = v_spacing
         x = 0
         for (i, n) in enumerate(display_names):
-            color = self.lut[key_names[i]]
+            if key_names is not None:
+                color = self.lut[key_names[i]]
+            else:
+                rgb_color = cv2.cvtColor(np.array([[self.function_lut[display_names[i]]]], dtype=np.uint8), cv2.COLOR_HSV2RGB)[0][0]
+                color = (float(rgb_color[0]), float(rgb_color[1]), float(rgb_color[2]))
             cv2.rectangle(
                 canvas,
                 (x + 5,y),
@@ -141,6 +186,11 @@ class HashPallette():
         for lk in long_k:
             sk += [self.tech.shorten_cellname(lk)]
             rk += [self.tech.redact_cellname(lk)]
+        fk = []
+        for func_k in sorted(self.function_lut.keys()):
+            if func_k != 'top':
+                fk += [func_k]
 
         self._generate_core(fname_stem + '_legend.png', sk, long_k)
         self._generate_core(fname_stem + '_redacted_legend.png', rk, long_k)
+        self._generate_core(fname_stem + '_function_legend.png', fk, None)

@@ -97,3 +97,6 @@ class TechBase():
         m = hashlib.sha256()
         m.update(name.encode('utf-8'))
         return m.hexdigest()[:20]
+
+    def set_func_count(self, count):
+        self.pallette.set_func_count(count)

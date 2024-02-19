@@ -65,6 +65,7 @@ def main():
     top_def.create_hierarchy()
     logging.info("clustering hierarchy...")
     top_def.cluster_hierarchy()
+    tm.set_func_count(top_def.total_func_regions)
 
     tm.gather_stats(top_def)
     logging.info("generating image...")
@@ -74,6 +75,10 @@ def main():
     if len(missing_cells) > 0:
         # recurse through missing cells
         top_def.generate_missing(missing_cells, tm)
+
+    missing_cells = top_def.render_function(tm)
+    if len(missing_cells) > 0:
+        top_def.generate_missing(missing_cells, tm, function=True)
 
     logging.info("generating legend...")
     top_def.generate_legend(tm)
