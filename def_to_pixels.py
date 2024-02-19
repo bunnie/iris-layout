@@ -61,6 +61,10 @@ def main():
         PIX_PER_UM = PIX_PER_UM_20X
 
     top_def = Design(args.def_file, PIX_PER_UM)
+    logging.info("creating hierarchy...")
+    top_def.create_hierarchy()
+    logging.info("clustering hierarchy...")
+    top_def.cluster_hierarchy()
 
     tm.gather_stats(top_def)
     logging.info("generating image...")

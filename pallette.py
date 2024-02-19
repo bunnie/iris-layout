@@ -1,6 +1,7 @@
 import numpy as np
 import cv2
 import logging
+import json
 from math import ceil, floor, sqrt
 
 class HashPallette():
@@ -69,6 +70,16 @@ class HashPallette():
             rgb_color = cv2.cvtColor(np.array([[hsv_color]], dtype=np.uint8), cv2.COLOR_HSV2RGB)[0][0]
             self.lut[name] = (float(rgb_color[0]), float(rgb_color[1]), float(rgb_color[2]))
             return self.lut[name]
+
+    def save(self, fname):
+        save_struct = {
+            'lut': self.lut,
+            'hue_ranges': self.hue_ranges,
+            "sat_ranges": self.sat_ranges,
+            "next_color": self.next_color,
+        }
+        with open(fname, 'w') as f:
+            f.write(json.dumps(save_struct, indent=2))
 
     # this path is much slower, but we also don't expect to use it very often at this point.
     # this is mostly just for checking

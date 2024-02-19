@@ -17,6 +17,13 @@ from prims import Rect, Point
 
 DEF_TO_PIXELS_VERSION = '1.0.0'
 
+class Leaf():
+    def __init__(self, d, name):
+        self.name = name
+        self.cell = d['cell']
+        self.loc = d['loc']
+        self.o9n = d['orientation']
+
 class Design():
     def def_to_json(self):
         with open(self.df, 'r') as def_file:
@@ -177,6 +184,7 @@ class Design():
             structure = {
                 'orientation': 'N' # default to 'N' in case an angle isn't specified
             }
+            # dump_file = open("dump.txt", "w")
             while True:
                 # break the stream down into records
                 if do_progress:
@@ -196,6 +204,7 @@ class Design():
                 # extract the data from a record
                 data = self.extract_data(record)
                 rec_name = self.gds_name_lut[record['rec_type']]
+                # dump_file.write(f"{rec_name}: {data}\n")
                 if rec_name == 'LIBNAME':
                     self.schema['name'] = data[0]
                 elif rec_name == 'UNITS':
@@ -238,8 +247,13 @@ class Design():
                     }
                 elif rec_name == 'SNAME':
                     structure['cell'] = data[0]
+                    #if not data[0].startswith('DMY_'):
+                    #    print(f'{rec_name}: {data[0]}')
                 elif rec_name == 'PROPVALUE':
                     structure['name'] = data[0]
+                    #print(f'{rec_name}: {data[0]}')
+                #elif rec_name == 'PROPATTR' or rec_name == 'STRING' or rec_name == 'TEXT':
+                #    print(f'{rec_name}: {data[0]}')
                 elif rec_name == 'STRANS':
                     assert data[1] == 0, "STRANS magnification or other parameter not handled!"
                     if data[0] == 0:
@@ -386,6 +400,7 @@ class Design():
 
     def generate_legend(self, tech):
         tech.pallette.generate_legend(str(self.df.with_name(self.df.stem)))
+        tech.pallette.save(str(self.df.with_name(self.df.stem)) + '_pallette.json')
 
     def save_layout(self):
         cv2.imwrite(str(self.df.with_name(self.df.stem + '.png')), self.canvas)
@@ -451,3 +466,158 @@ class Design():
             if len(next_missing) > 0:
                 d.generate_missing(next_missing, tm)
             self.merge_subdesign(d, missing_cell)
+
+    def is_leaf(self, item):
+        return type(item) is dict and len(item) == 3 and 'cell' in item and 'loc' in item and 'orientation' in item
+
+    def flatten_region(self, h):
+        if type(h) is list:
+            return h
+
+        ret = []
+        for (k, v) in h.items():
+            if type(v) is list:
+                ret += v
+            else:
+                ret += self.flatten_region(v)
+        return ret
+
+    def recursive_populate(self, full_name, remaining_names, current_level):
+        if len(remaining_names) == 2:
+            leaf_name = remaining_names[0] + '_leaves'
+            if leaf_name not in current_level:
+                current_level[leaf_name] = []
+            current_level[leaf_name] += [Leaf(self.schema['cells'][full_name], remaining_names[1])]
+        elif len(remaining_names) == 1:
+            # we're handed a leaf with no parent. Where do we stick it?
+            assert False
+        else:
+            if remaining_names[0] not in current_level:
+                current_level[remaining_names[0]] = {}
+            self.recursive_populate(full_name, remaining_names[1:], current_level[remaining_names[0]])
+
+    def create_hierarchy(self):
+        sorted_keys = sorted(self.schema['cells'].keys())
+        self.h = {
+            'top': []
+        }
+        self.total_cells = len(sorted_keys)
+        progress = ProgressBar(min_value=0, max_value=self.total_cells)
+        for i, sk in enumerate(sorted_keys):
+            progress.update(i)
+            levels = sk.split('/')
+            if len(levels) == 1:
+                self.h['top'] += [Leaf(self.schema['cells'][sk], levels[0])]
+            else:
+                self.recursive_populate(sk, levels, self.h)
+        progress.finish()
+        #with open("dump.json", "w") as d:
+        #    d.write(json.dumps(self.h, indent=2, default=vars))
+
+    def recurse_tree_depth(self, cur_level, depth):
+        max_depth = depth
+        count = 0
+        if type(cur_level) is list:
+            return len(cur_level), max_depth
+        else:
+            for _k, v in cur_level.items():
+                (c, d) = self.recurse_tree_depth(v, depth + 1)
+                count += c
+                if d > max_depth:
+                    max_depth = d
+        return count, max_depth
+
+    def cluster_hierarchy(self, maxgroups= 150, mingroups= 16):
+        self.clusters = {}
+        self.threshold = 200_000
+        self.maxgroups = maxgroups
+        self.mingroups = mingroups
+        tries = 0
+        while True:
+            self.recurse_cluster_hierarchy(self.h, '')
+            if len(self.clusters) < self.maxgroups and len(self.clusters) > mingroups:
+                break
+            print(f"Retry {tries}, thresh {self.threshold}, groups {len(self.clusters)}")
+            self.clusters = {}
+            if len(self.clusters) >= self.maxgroups:
+                self.threshold += 10_000
+            elif len(self.clusters) <= self.mingroups:
+                if self.threshold > 10_000:
+                    self.threshold -= 10_000
+                elif self.threshold > 1000:
+                    self.threshold -= 1000
+                elif self.threshold > 100:
+                    self.threshold -= 100
+                else:
+                    break
+            else:
+                break
+        # with open("dump2.json", "w") as d:
+        #    d.write(json.dumps(self.clusters, indent=2, default=vars))
+
+    def recurse_cluster_hierarchy(self, at_level, path):
+        for k, v in at_level.items():
+            (count, depth) = self.recurse_tree_depth(v, 0)
+            if depth == 0:
+                self.clusters[path + '/' + k] = self.flatten_region(v)
+            else:
+                if count > self.threshold:
+                    self.recurse_cluster_hierarchy(v, path + '/' + k)
+                else:
+                    self.clusters[path + '/' + k] = self.flatten_region(v)
+
+
+
+    def print_hierarchy(self):
+        h = {}
+        paths = self.schema['cells'].keys()
+        for path in paths:
+            hier = path.split('/')
+            if len(hier) == 1:
+                h[hier[0]] = self.schema['cells'][path]
+            elif len(hier) == 2:
+                if hier[0] not in h:
+                    h[hier[0]] = {}
+                h[hier[0]][hier[1]] = self.schema['cells'][path]
+            else:
+                if hier[0] not in h:
+                    h[hier[0]] = {}
+                if hier[1] not in h[hier[0]]:
+                    h[hier[0]][hier[1]] = {}
+                if hier[2] not in h[hier[0]][hier[1]]:
+                    remaining_path = ''
+                    first = True
+                    for p in hier[2:]:
+                        if not first:
+                            remaining_path += '/'
+                        remaining_path += p
+                        first = False
+                    h[hier[0]][hier[1]][remaining_path] = self.schema['cells'][path]
+
+        #with open("dump.json", "w") as d:
+        #    d.write(json.dumps(h, indent=2))
+        bins = {
+            'fill' : [],
+            'misc' : []
+        }
+        for (_l1k, l1v) in h.items():
+            if self.is_leaf(l1v):
+                bins['fill'] += [l1v] # all top-level leaves are fill
+            else:
+                for (l2k, l2v) in l1v.items():
+                    if self.is_leaf(l2v):
+                        bins['fill'] += [l2v] # these are probably also fill
+                    else:
+                        if len(l2v) > 250:
+                            region = l2k
+                            bins[region] = self.flatten_region(l2v)
+                        else:
+                            for (l3k, l3v) in l2v.items():
+                                if self.is_leaf(l3v):
+                                    bins['misc'] += [l3v]
+                                else:
+                                    bins[l3k] = self.flatten_region(l3v)
+
+        print(f"regions: {len(bins)}")
+        for b in bins.keys():
+            print(b)
