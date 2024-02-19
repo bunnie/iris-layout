@@ -111,7 +111,6 @@ class HashPallette():
             # compute the next color
             h = h + self.h_inc
             if h >= 180:
-                logging.warning("Function mapping ran out of color space, wrapping colors!")
                 h = 0
                 v = v - 32
                 if v < 0:

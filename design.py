@@ -362,6 +362,7 @@ class Design():
         die = Rect(Point(die_ll[0], die_ll[1]), Point(die_ur[0], die_ur[1]))
         self.canvas = np.zeros((int(die.height() * self.pix_per_um), int(die.width() * self.pix_per_um), 3), dtype=np.uint8)
         self.functions = np.zeros((int(die.height() * self.pix_per_um), int(die.width() * self.pix_per_um), 3), dtype=np.uint8)
+        self.labels = np.zeros((int(die.height() * self.pix_per_um), int(die.width() * self.pix_per_um), 3), dtype=np.uint8)
 
     def render_layer(self, tech):
         do_progress = len(self.schema['cells'].keys()) > 1000
@@ -403,7 +404,9 @@ class Design():
         missing_cells = []
         color = tech.pallette.function_to_rgb(name)
         if type(data) is list:
-            for leaf in data:
+            num_cells = len(data)
+            coordinates = np.zeros((num_cells, 2), dtype=int)
+            for i, leaf in enumerate(data):
                 try:
                     cell_size = tech.tech.schema['cells'][leaf.cell]['size']
                 except:
@@ -424,9 +427,40 @@ class Design():
                     color,
                     thickness = -1,
                 )
+                # coordinates = np.append(coordinates, [leaf.loc], axis=0)
+                coordinates[i] = leaf.loc
+
+            # add a text label in the nominal centroid of the rendered region
+            centroid = np.median(coordinates, axis=0)
+            centroid = (int(centroid[0] * self.pix_per_um), int(centroid[1] * self.pix_per_um))
+            font_scale = 1.0
+            thickness = 1
+            font_face = cv2.FONT_HERSHEY_PLAIN
+            path = name.split('/')
+            text = path[-1] + f'({num_cells})'
+            ((w, h), baseline) = cv2.getTextSize(text, font_face, font_scale, thickness)
+            cv2.rectangle(
+                self.labels,
+                centroid,
+                (centroid[0] + w, centroid[1] - h),
+                (255, 255, 255),
+                thickness = -1,
+                lineType = cv2.LINE_4
+            )
+            cv2.putText(
+                self.labels,
+                text,
+                centroid,
+                font_face,
+                font_scale,
+                color,
+                thickness,
+                bottomLeftOrigin=False
+            )
         else:
             for (_k, v) in data.items():
                 missing_cells += self.render_function_cluster(tech, name, v)
+
         return missing_cells
 
     def render_function(self, tech):
@@ -446,6 +480,9 @@ class Design():
                 mc = self.render_function_cluster(tech, region_name, region_data)
         if do_progress:
             progress.finish()
+        cv2.copyTo(
+            self.labels, self.labels, self.functions
+        )
         return mc
 
     def generate_legend(self, tech):
@@ -582,9 +619,9 @@ class Design():
                     max_depth = d
         return count, max_depth
 
-    def cluster_hierarchy(self, maxgroups= 180, mingroups= 16):
+    def cluster_hierarchy(self, maxgroups= 300, mingroups= 16):
         self.clusters = {}
-        self.threshold = 200_000
+        self.threshold = 100_000
         self.maxgroups = maxgroups
         self.mingroups = mingroups
         tries = 0
