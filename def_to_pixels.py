@@ -42,6 +42,9 @@ def main():
     parser.add_argument(
         "--regenerate-lef", default=False, action="store_true", help="Force regeneration of LEF database"
     )
+    parser.add_argument(
+        "--redact", default=False, action="store_true", help="Redact details"
+    )
     args = parser.parse_args()
     numeric_level = getattr(logging, args.loglevel.upper(), None)
     if not isinstance(numeric_level, int):

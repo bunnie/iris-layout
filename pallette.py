@@ -20,7 +20,7 @@ class HashPallette():
                     self.next_color[family][name] = [range[0], 32, 32]
 
         self.function_lut = {} # this stores HSV values for $reasons
-        self.function_cur_hsv = (0, 255, 255)
+        self.function_cur_hsv = (0, 255, 192)
         self.func_region_count = 0
         self.h_inc = 1
 

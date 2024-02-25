@@ -5,6 +5,7 @@ import numpy as np
 import struct
 import io
 import string
+import random
 
 from progressbar.bar import ProgressBar
 from pathlib import Path
@@ -433,24 +434,27 @@ class Design():
             # add a text label in the nominal centroid of the rendered region
             centroid = np.median(coordinates, axis=0)
             centroid = (int(centroid[0] * self.pix_per_um), int(centroid[1] * self.pix_per_um))
-            font_scale = 1.0
+            font_scale = 0.5
             thickness = 1
-            font_face = cv2.FONT_HERSHEY_PLAIN
+            font_face = cv2.FONT_HERSHEY_SIMPLEX
             path = name.split('/')
-            text = path[-1] + f'({num_cells})'
+            if len(path) > 1:
+                text = path[-2] + '/' + path[-1] + f'({num_cells})'
+            else:
+                text = path[-1] + f'({num_cells})'
             ((w, h), baseline) = cv2.getTextSize(text, font_face, font_scale, thickness)
             cv2.rectangle(
                 self.labels,
-                centroid,
-                (centroid[0] + w, centroid[1] - h),
+                (centroid[0] - w // 2, centroid[1] + baseline - h // 2),
+                (centroid[0] - w // 2 + w, centroid[1] - h - baseline - h // 2),
                 (255, 255, 255),
                 thickness = -1,
-                lineType = cv2.LINE_4
+                lineType = cv2.LINE_8
             )
             cv2.putText(
                 self.labels,
                 text,
-                centroid,
+                (centroid[0] - w // 2, centroid[1] - h // 2),
                 font_face,
                 font_scale,
                 color,
@@ -469,7 +473,15 @@ class Design():
         if do_progress:
             progress = ProgressBar(min_value=0, max_value=self.total_cells, prefix='Rendering functions...')
         cells_processed = 0
-        for region_name, region_data in self.clusters.items():
+        # shuffle items so the color scheme contrasts more
+        # the dictionary is alphabetically sorted, which tends to put similar
+        # blocks next to each other, creating similar colors. Shuffling makes this better.
+        cluster_keys = list(self.clusters.keys())
+        random.shuffle(cluster_keys)
+        for k in cluster_keys:
+            region_name = k
+            region_data = self.clusters[k]
+
             if do_progress:
                 progress.update(cells_processed)
             if region_name == '/top':
@@ -561,35 +573,8 @@ class Design():
                 d.generate_missing(next_missing, tm, function)
             self.merge_subdesign(d, missing_cell, function)
 
-    def is_leaf(self, item):
-        return type(item) is dict and len(item) == 3 and 'cell' in item and 'loc' in item and 'orientation' in item
-
-    def flatten_region(self, h):
-        if type(h) is list:
-            return h
-
-        ret = []
-        for (k, v) in h.items():
-            if type(v) is list:
-                ret += v
-            else:
-                ret += self.flatten_region(v)
-        return ret
-
-    def recursive_populate(self, full_name, remaining_names, current_level):
-        if len(remaining_names) == 2:
-            leaf_name = remaining_names[0] + '_leaves'
-            if leaf_name not in current_level:
-                current_level[leaf_name] = []
-            current_level[leaf_name] += [Leaf(self.schema['cells'][full_name], remaining_names[1])]
-        elif len(remaining_names) == 1:
-            # we're handed a leaf with no parent. Where do we stick it?
-            assert False
-        else:
-            if remaining_names[0] not in current_level:
-                current_level[remaining_names[0]] = {}
-            self.recursive_populate(full_name, remaining_names[1:], current_level[remaining_names[0]])
-
+    # build a hierarchy from the 'def' file. Relies on the hierarchy using '/' separators for cell names.
+    # TODO: make the hierarchy separator dependent on the `tech` library
     def create_hierarchy(self):
         sorted_keys = sorted(self.schema['cells'].keys())
         self.h = {
@@ -605,21 +590,24 @@ class Design():
             else:
                 self.recursive_populate(sk, levels, self.h)
         progress.finish()
-
-    def recurse_tree_depth(self, cur_level, depth):
-        max_depth = depth
-        count = 0
-        if type(cur_level) is list:
-            return len(cur_level), max_depth
+    # helper for above
+    def recursive_populate(self, full_name, remaining_names, current_level):
+        if len(remaining_names) == 2:
+            leaf_name = remaining_names[0] + '_leaves'
+            if leaf_name not in current_level:
+                current_level[leaf_name] = []
+            current_level[leaf_name] += [Leaf(self.schema['cells'][full_name], remaining_names[1])]
+        elif len(remaining_names) == 1:
+            # we're handed a leaf with no parent. Where do we stick it?
+            assert False
         else:
-            for _k, v in cur_level.items():
-                (c, d) = self.recurse_tree_depth(v, depth + 1)
-                count += c
-                if d > max_depth:
-                    max_depth = d
-        return count, max_depth
+            if remaining_names[0] not in current_level:
+                current_level[remaining_names[0]] = {}
+            self.recursive_populate(full_name, remaining_names[1:], current_level[remaining_names[0]])
 
-    def cluster_hierarchy(self, maxgroups= 300, mingroups= 16):
+    # take the hierarchy and cluster the leaves into groups, so we can do functional rendering of blobs
+    # without a lot of clutter from tiny leaves
+    def cluster_hierarchy(self, maxgroups= 180, mingroups= 16):
         self.clusters = {}
         self.threshold = 100_000
         self.maxgroups = maxgroups
@@ -627,6 +615,7 @@ class Design():
         tries = 0
         while True:
             self.recurse_cluster_hierarchy(self.h, '')
+            self.merge_leaves()
             cluster_count = len(self.clusters)
             if cluster_count < self.maxgroups and cluster_count > mingroups:
                 break
@@ -651,14 +640,64 @@ class Design():
 
         self.total_func_regions = len(self.clusters) - 1  # 'top' is not counted
 
+    def flatten_region(self, h):
+        if type(h) is list:
+            return h
+
+        ret = []
+        for (k, v) in h.items():
+            if type(v) is list:
+                ret += v
+            else:
+                ret += self.flatten_region(v)
+        return ret
+
+    def recurse_tree_depth(self, cur_level, depth):
+        max_depth = depth
+        count = 0
+        if type(cur_level) is list:
+            return len(cur_level), max_depth
+        else:
+            for _k, v in cur_level.items():
+                (c, d) = self.recurse_tree_depth(v, depth + 1)
+                count += c
+                if d > max_depth:
+                    max_depth = d
+        return count, max_depth
+
     def recurse_cluster_hierarchy(self, at_level, path):
         for k, v in at_level.items():
             (count, depth) = self.recurse_tree_depth(v, 0)
             if depth == 0:
                 self.clusters[path + '/' + k] = self.flatten_region(v)
             else:
-                if count > self.threshold:
+                # TODO: create special-case clustering rules dependent on the tech lib
+                if count > self.threshold or k == 'sce' or k == 'u__coresys_vexsys' or k == 'vextop':
                     self.recurse_cluster_hierarchy(v, path + '/' + k)
                 else:
                     self.clusters[path + '/' + k] = self.flatten_region(v)
 
+    # prune small/misc leaves from the hierarchy by merging them into parents or a catch-all 'misc' key
+    def merge_leaves(self):
+        # merge same-level leaves into the parent hierarchy
+        leaf_keys = []
+        for c in self.clusters.keys():
+            if c.endswith('_leaves'):
+                leaf_keys += [c]
+        for l in leaf_keys:
+            stem = l[:-len('_leaves')]
+            if stem in self.clusters:
+                self.clusters[stem] += self.clusters[l]
+                del self.clusters[l]
+
+        # merge small leaves into a single key
+        leaf_keys = []
+        for c in self.clusters.keys():
+            if c.endswith('_leaves'):
+                leaf_keys += [c]
+        misc_cells = []
+        for l in leaf_keys:
+            if len(self.clusters[l]) < 50:
+                misc_cells += self.clusters[l]
+                del self.clusters[l]
+        self.clusters['misc'] = misc_cells
