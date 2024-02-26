@@ -140,7 +140,7 @@ class HashPallette():
                 longest_name = n
         ((w, th), baseline) = cv2.getTextSize(longest_name, font_face, font_scale, thickness)
         v_spacing = int(th + baseline)
-        h_spacing = int(w * 1.15)
+        h_spacing = int(w + 70)
         single_col_height = (v_spacing * (len(display_names) + 2))
         desired_ratio = 16/9
         cols = ceil(sqrt(single_col_height / (desired_ratio * h_spacing)))
@@ -156,7 +156,7 @@ class HashPallette():
                 color = (float(rgb_color[0]), float(rgb_color[1]), float(rgb_color[2]))
             cv2.rectangle(
                 canvas,
-                (x + 5,y),
+                (x + 5, y),
                 (x + 50, y+th),
                 color,
                 thickness = -1,

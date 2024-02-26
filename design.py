@@ -6,6 +6,7 @@ import struct
 import io
 import string
 import random
+from math import pi, sqrt, ceil
 
 from progressbar.bar import ProgressBar
 from pathlib import Path
@@ -286,7 +287,8 @@ class Design():
             with open(self.design_json, 'w+') as def_out:
                 def_out.write(json.dumps(self.schema, indent=2))
 
-    def __init__(self, file_path, pix_per_um):
+    def __init__(self, file_path, pix_per_um, redact=False):
+        self.redact = redact
         self.pix_per_um = pix_per_um
         self.df = Path(file_path)
         self.extension = self.df.suffix
@@ -382,21 +384,34 @@ class Design():
             except:
                 missing_cells += [data]
                 continue
-            tl = (
-                int(loc[0] * self.pix_per_um),
-                int((loc[1] + cell_size[1]) * self.pix_per_um),
-            )
-            br = (
-                int((loc[0] + cell_size[0]) * self.pix_per_um),
-                int(loc[1] * self.pix_per_um),
-            )
-            cv2.rectangle(
-                self.canvas,
-                tl,
-                br,
-                color,
-                thickness = -1,
-            )
+            if self.redact:
+                area = cell_size[1] * cell_size[0] * self.pix_per_um * self.pix_per_um
+                radius = ceil(sqrt(area / pi))
+                cv2.circle(
+                    self.canvas,
+                    (int(((loc[0] + (cell_size[0] // 2)) * self.pix_per_um)),
+                     int(((loc[1] + (cell_size[1] // 2)) * self.pix_per_um))
+                    ),
+                    radius,
+                    color,
+                    thickness=1,
+                )
+            else:
+                tl = (
+                    int(loc[0] * self.pix_per_um),
+                    int((loc[1] + cell_size[1]) * self.pix_per_um),
+                )
+                br = (
+                    int((loc[0] + cell_size[0]) * self.pix_per_um),
+                    int(loc[1] * self.pix_per_um),
+                )
+                cv2.rectangle(
+                    self.canvas,
+                    tl,
+                    br,
+                    color,
+                    thickness = -1,
+                )
         if do_progress:
             progress.finish()
         return missing_cells
@@ -413,21 +428,34 @@ class Design():
                 except:
                     missing_cells += [data]
                     continue
-                tl = (
-                    int(leaf.loc[0] * self.pix_per_um),
-                    int((leaf.loc[1] + cell_size[1]) * self.pix_per_um),
-                )
-                br = (
-                    int((leaf.loc[0] + cell_size[0]) * self.pix_per_um),
-                    int(leaf.loc[1] * self.pix_per_um),
-                )
-                cv2.rectangle(
-                    self.functions,
-                    tl,
-                    br,
-                    color,
-                    thickness = -1,
-                )
+                if self.redact:
+                    area = cell_size[1] * cell_size[0] * self.pix_per_um * self.pix_per_um
+                    radius = ceil(sqrt(area / pi))
+                    cv2.circle(
+                        self.functions,
+                        (int(((leaf.loc[0] + (cell_size[0] // 2)) * self.pix_per_um)),
+                        int(((leaf.loc[1] + (cell_size[1] // 2)) * self.pix_per_um))
+                        ),
+                        radius,
+                        color,
+                        thickness=-1,
+                    )
+                else:
+                    tl = (
+                        int(leaf.loc[0] * self.pix_per_um),
+                        int((leaf.loc[1] + cell_size[1]) * self.pix_per_um),
+                    )
+                    br = (
+                        int((leaf.loc[0] + cell_size[0]) * self.pix_per_um),
+                        int(leaf.loc[1] * self.pix_per_um),
+                    )
+                    cv2.rectangle(
+                        self.functions,
+                        tl,
+                        br,
+                        color,
+                        thickness = -1,
+                    )
                 # coordinates = np.append(coordinates, [leaf.loc], axis=0)
                 coordinates[i] = leaf.loc
 

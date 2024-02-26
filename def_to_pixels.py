@@ -1,20 +1,9 @@
 #! /usr/bin/env python3
 
 import argparse
-from pathlib import Path
 import logging
-import numpy as np
-import math
-import re
-import cv2
-import sys
-import json
 import importlib.util
-from progressbar.bar import ProgressBar
 
-from schema import Schema
-from prims import Rect, Point
-from pallette import HashPallette
 from design import Design
 
 # derived from reference image "full-H"
@@ -63,7 +52,7 @@ def main():
     elif args.mag == '20x':
         PIX_PER_UM = PIX_PER_UM_20X
 
-    top_def = Design(args.def_file, PIX_PER_UM)
+    top_def = Design(args.def_file, PIX_PER_UM, args.redact)
     logging.info("creating hierarchy...")
     top_def.create_hierarchy()
     logging.info("clustering hierarchy...")

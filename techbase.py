@@ -24,6 +24,7 @@ class TechBase():
             'other' : 0,
         }
         self.tech_name = args.tech
+        self.redact = args.redact
         self.tech = Schema('tech' / Path(self.tech_name))
         if not self.tech.read() or args.regenerate_lef:
             logging.info("Can't read db.json in tech directory; generating it automatically.")
