@@ -2,6 +2,7 @@ import argparse
 import logging
 import importlib.util
 from progressbar.bar import ProgressBar
+import json
 
 import cv2
 import numpy as np
@@ -147,12 +148,14 @@ def export_png(cells):
     cv2.waitKey(0)
     cv2.destroyAllWindows()
 
-def export_lib_png(cell_list):
+def export_lib(cell_list):
     boxes = []
+    export = {}
     for ref in cell_list.references:
         color = tm.pallette.str_to_rgb(ref.ref_cell.name, map_orientation(ref.rotation, ref.x_reflection))
+        color_int = list(map(int, color))
         if ref.get_bounding_box() is not None:
-            boxes += [(ref.get_bounding_box(), color)]
+            boxes += [(ref.get_bounding_box(), color_int)]
 
     min_x = min(polygon[0][:, 0].min() for polygon in boxes)
     min_y = min(polygon[0][:, 1].min() for polygon in boxes)
@@ -168,12 +171,17 @@ def export_lib_png(cell_list):
         r = np.rint(rect * PIX_PER_UM).astype(int)
         cv2.rectangle(image, r[0] - offset, r[1] - offset, color, thickness=-1, lineType=cv2.LINE_8)
         progress.update(i)
+        # pixel offsets and colors
+        export[i] = ([(r[0] - offset).tolist(), (r[1] - offset).tolist()], color)
     progress.finish()
 
     cv2.imshow(f'{gds_file.stem} library', image)
     cv2.imwrite(str(image_directory / (gds_file.stem + '_lib.png')), image)
     cv2.waitKey(0)
     cv2.destroyAllWindows()
+
+    with open(str(image_directory / (gds_file.stem + '_lib.json')), 'w') as f:
+        json.dump(export, f)
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description="IRIS GDS to pixels helper")
@@ -216,6 +224,6 @@ if __name__ == '__main__':
             # Export the GDS as PNG files
             export_png(cells[0])
 
-        cell_list = cells[0]
         if True:
-            export_lib_png(cell_list)
+            # Export the GDS as abstract library tiles
+            export_lib(cells[0])
