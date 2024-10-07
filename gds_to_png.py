@@ -155,7 +155,7 @@ def export_lib(cell_list):
         color = tm.pallette.str_to_rgb(ref.ref_cell.name, map_orientation(ref.rotation, ref.x_reflection))
         color_int = list(map(int, color))
         if ref.get_bounding_box() is not None:
-            boxes += [(ref.get_bounding_box(), color_int)]
+            boxes += [(ref.get_bounding_box(), color_int, ref.ref_cell.name)]
 
     min_x = min(polygon[0][:, 0].min() for polygon in boxes)
     min_y = min(polygon[0][:, 1].min() for polygon in boxes)
@@ -167,12 +167,12 @@ def export_lib(cell_list):
     image = np.full((ceil(block_height * PIX_PER_UM), ceil(block_width * PIX_PER_UM), 3), BG_COLOR, dtype=np.uint8)
     offset = (int(round(min_x * PIX_PER_UM)), int(round(min_y * PIX_PER_UM)))
     progress = ProgressBar(min_value = 0, max_value=len(boxes), prefix = f'Library mapping {gds_file.stem} ')
-    for (i, (rect, color)) in enumerate(boxes):
+    for (i, (rect, color, name)) in enumerate(boxes):
         r = np.rint(rect * PIX_PER_UM).astype(int)
         cv2.rectangle(image, r[0] - offset, r[1] - offset, color, thickness=-1, lineType=cv2.LINE_8)
         progress.update(i)
         # pixel offsets and colors
-        export[i] = ([(r[0] - offset).tolist(), (r[1] - offset).tolist()], color)
+        export[i] = ([(r[0] - offset).tolist(), (r[1] - offset).tolist()], color, name)
     progress.finish()
 
     cv2.imshow(f'{gds_file.stem} library', image)
