@@ -40,7 +40,7 @@ AIRY_GAUSSIAN = 0.84 * F_NUMBER * 1.050 * PIX_PER_UM
 
 # White on black
 BG_COLOR = (0, 0, 0)
-FG_COLOR = (128, 128, 128)
+FG_COLOR = (255, 255, 255)
 
 def is_intersecting(r1, r2):
     r1_x, r1_y, r1_w, r1_h = r1
@@ -102,6 +102,8 @@ def export_png(cells):
     steps_x = ceil(block_width * SCALE_OVER_MICRONS / MAX_X)
     steps_y = ceil(block_height * SCALE_OVER_MICRONS / MAX_Y)
     image = np.full((ceil((steps_y + 1) * MAX_Y / OPTICAL_FACTOR), ceil((steps_x + 1) * MAX_X / OPTICAL_FACTOR), 3), BG_COLOR, dtype=np.uint8)
+    # correct for GDS file offset mapping, so that the first drawable object is at 0,0
+    offset = (int(round(min_x * SCALE_OVER_MICRONS)), int(round(min_y * SCALE_OVER_MICRONS)))
 
     total_steps = steps_x * steps_y
     progress = ProgressBar(min_value = 0, max_value=total_steps, prefix = f'Extracting {gds_file.stem} ')
@@ -109,8 +111,8 @@ def export_png(cells):
     for x_base in range(steps_x):
         for y_base in range(steps_y):
             tile = np.full((MAX_Y, MAX_X, 3), BG_COLOR, dtype = np.uint8)
-            x_offset = x_base * MAX_X
-            y_offset = y_base * MAX_Y
+            x_offset = x_base * MAX_X + offset[0]
+            y_offset = y_base * MAX_Y + offset[1]
             tile_bounds = (x_offset, y_offset, x_offset + MAX_X, y_offset + MAX_Y)
             # cells.write_svg(image_directory / (gds_file.stem + '.svg'))
             # svg_to_png(image_directory / (gds_file.stem + '.svg'), image_directory / (gds_file.stem + '.png'))
@@ -137,6 +139,9 @@ def export_png(cells):
             step += 1
             progress.update(step)
     progress.finish()
+
+    # crop out the excess pixels from the tile processing
+    image = image[:int(ceil(block_height * PIX_PER_UM)),:int(ceil(block_width * PIX_PER_UM))]
 
     cv2.imshow(f'{gds_file.stem} rendered', image)
     cv2.imwrite(str(image_directory / (gds_file.stem + '.png')), image)
@@ -220,7 +225,7 @@ if __name__ == '__main__':
         # Catch it if it's not the case, so I can find the test case and understand what it even means to have two top cells.
         assert len(cells) == 1
 
-        if False:
+        if True:
             # Export the GDS as PNG files
             export_png(cells[0])
 
