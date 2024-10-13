@@ -85,7 +85,7 @@ def map_orientation(rotation, reflection):
     else:
         logging.error(f"Unhandled rotation: {rotation}")
 
-def export_png(cells):
+def export_png(cells, interactive=False):
     all_polygons = []
     for polygon in cells.get_polygons():
         all_polygons.append(polygon)
@@ -143,17 +143,20 @@ def export_png(cells):
     # crop out the excess pixels from the tile processing
     image = image[:int(ceil(block_height * PIX_PER_UM)),:int(ceil(block_width * PIX_PER_UM))]
 
-    cv2.imshow(f'{gds_file.stem} rendered', image)
-    cv2.imwrite(str(image_directory / (gds_file.stem + '.png')), image)
     # apply a gaussian blur that approximates the effect of an airy disk, which simulates the effect of
     # diffraction-limited optics. The Airy parameters are computed in the constants at the top of the file.
     airy = cv2.GaussianBlur(image, (0, 0), AIRY_GAUSSIAN)
-    cv2.imshow(f'{gds_file.stem} airy', airy)
-    cv2.imwrite(str(image_directory / (gds_file.stem + '_airy_' + '.png')), airy)
-    cv2.waitKey(0)
-    cv2.destroyAllWindows()
 
-def export_lib(cell_list):
+    cv2.imwrite(str(image_directory / (gds_file.stem + '_airy_' + '.png')), airy)
+    cv2.imwrite(str(image_directory / (gds_file.stem + '.png')), image)
+
+    if interactive:
+        cv2.imshow(f'{gds_file.stem} rendered', image)
+        cv2.imshow(f'{gds_file.stem} airy', airy)
+        cv2.waitKey(0)
+        cv2.destroyAllWindows()
+
+def export_lib(cell_list, interactive=False):
     boxes = []
     export = {}
     for ref in cell_list.references:
@@ -180,10 +183,11 @@ def export_lib(cell_list):
         export[i] = ([(r[0] - offset).tolist(), (r[1] - offset).tolist()], color, name)
     progress.finish()
 
-    cv2.imshow(f'{gds_file.stem} library', image)
-    cv2.imwrite(str(image_directory / (gds_file.stem + '_lib.png')), image)
-    cv2.waitKey(0)
-    cv2.destroyAllWindows()
+    if interactive:
+        cv2.imshow(f'{gds_file.stem} library', image)
+        cv2.imwrite(str(image_directory / (gds_file.stem + '_lib.png')), image)
+        cv2.waitKey(0)
+        cv2.destroyAllWindows()
 
     with open(str(image_directory / (gds_file.stem + '_lib.json')), 'w') as f:
         json.dump(export, f)
@@ -197,10 +201,7 @@ if __name__ == '__main__':
         "--tech", required=True, help="Technology name", choices=['gf180', 'sky130', 'tsmc22ull']
     )
     parser.add_argument(
-        "--regenerate-lef", default=False, action="store_true", help="Force regeneration of LEF database"
-    )
-    parser.add_argument(
-        "--redact", default=False, action="store_true", help="Redact details"
+        "--interactive", default=False, action="store_true", help="Pause between each GDS file and show intermediate results for review"
     )
 
     args = parser.parse_args()
@@ -227,8 +228,8 @@ if __name__ == '__main__':
 
         if True:
             # Export the GDS as PNG files
-            export_png(cells[0])
+            export_png(cells[0], interactive=args.interactive)
 
         if True:
             # Export the GDS as abstract library tiles
-            export_lib(cells[0])
+            export_lib(cells[0], interactive=args.interactive)
