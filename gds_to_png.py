@@ -203,6 +203,13 @@ if __name__ == '__main__':
     parser.add_argument(
         "--interactive", default=False, action="store_true", help="Pause between each GDS file and show intermediate results for review"
     )
+    # these args are interpreted by the TechBase module, don't remove them
+    parser.add_argument(
+        "--regenerate-lef", default=False, action="store_true", help="Force regeneration of LEF database"
+    )
+    parser.add_argument(
+        "--redact", default=False, action="store_true", help="Redact details"
+    )
 
     args = parser.parse_args()
     numeric_level = getattr(logging, args.loglevel.upper(), None)
@@ -217,7 +224,7 @@ if __name__ == '__main__':
     tm = tech_module.Tech(args)
 
     image_directory = Path('imaging/')
-    for gds_file in image_directory.glob('*.gds'):
+    for gds_file in image_directory.glob('*.gds'): # [Path('imaging/wrapped_snn_network-poly.gds')]:
         # Load the GDS file
         gds_lib = gdspy.GdsLibrary(infile=str(gds_file))
         # Get all cells in the GDS
