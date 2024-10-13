@@ -224,6 +224,12 @@ if __name__ == '__main__':
     tm = tech_module.Tech(args)
 
     image_directory = Path('imaging/')
+    # Export all the cells for use as labels later on
+    with open(image_directory / f"{args.tech}_cells.json", 'w') as f:
+        cell_list = list(tm.tech.schema['cells'].keys())
+        hd_cell_list = list(filter(lambda s: '_sc_hd_' in s, cell_list))
+        json.dump(hd_cell_list, f)
+
     for gds_file in image_directory.glob('*.gds'): # [Path('imaging/wrapped_snn_network-poly.gds')]:
         # Load the GDS file
         gds_lib = gdspy.GdsLibrary(infile=str(gds_file))
