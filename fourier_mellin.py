@@ -86,6 +86,9 @@ if __name__ == "__main__":
     parser.add_argument(
         "--layer", required=False, help="Layer to process", choices=['poly', 'm1'], default='poly'
     )
+    parser.add_argument(
+        "--tech", required=False, help="Tech library", choices=['sky130'], default='sky130'
+    )
 
     args = parser.parse_args()
     numeric_level = getattr(logging, args.loglevel.upper(), None)
@@ -95,6 +98,7 @@ if __name__ == "__main__":
 
     name = args.name
     layer = args.layer
+    tech = args.tech
 
     # Load two images (they should be grayscale for simplicity)
     gds_png = cv2.imread(f"imaging/{name}-{layer}.png", cv2.IMREAD_GRAYSCALE)
@@ -119,6 +123,9 @@ if __name__ == "__main__":
     composite_overlay[max_loc[1]:max_loc[1] + gds_png.shape[0], max_loc[0]: max_loc[0] + gds_png.shape[1]] = gds_png
     blended = cv2.addWeighted(corrected_image, 1.0, composite_overlay, 0.5, 0)
 
+    with open(f'imaging/{args.tech}_cells.json', 'r') as f:
+        cell_names = json.load(f)
+
     with open(f'imaging/{name}-{layer}_lib.json', 'r') as f:
         cells = json.load(f)
 
@@ -129,7 +136,7 @@ if __name__ == "__main__":
     entry = {}
     entry['labels'] = []
     entry['data'] = []
-    labels = {}
+    labels = {} # this is no longer used, we pull the label index from the master label list
     label_count = 0
     for cell in cells.values():
         if cell[2] not in labels:
@@ -156,17 +163,21 @@ if __name__ == "__main__":
             data = cv2.cvtColor(corrected_image[center_y - 16:center_y + 16, center_x - 32:center_x + 32], cv2.COLOR_GRAY2RGB)
             # cv2.imshow('data', data)
             # cv2.waitKey(0)
-            entry['labels'].append(labels[cell[2]]) # substitute with a numeric value so it can be converted to a tensor
+            try:
+                label_index = cell_names.index(cell[2])
+            except ValueError:
+                print(f'Cell not in master cell list: {cell[2]}; skipping')
+                continue
+            entry['labels'].append(label_index) # substitute with a numeric value so it can be converted to a tensor
             entry['data'].append(data)
 
     # dump the data into pickle files for consumption by downstream CNN pipeline
     print(f'max_x: {max_x}, max_y: {max_y}')
     with open(f'imaging/{name}-{layer}.pkl', 'wb') as f:
         pickle.dump(entry, f)
-    label_list = sorted(labels.items(), key=operator.itemgetter(1))
     meta = {
         'num_cases_per_batch' : len(entry['data']),
-        'label_names' : label_list,
+        'label_names' : cell_names,
         'num_vis' : 64 * 32 * 3,
     }
     with open(f'imaging/{name}-{layer}.meta', 'wb') as f:
