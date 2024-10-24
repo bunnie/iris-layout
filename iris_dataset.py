@@ -8,6 +8,8 @@ from PIL import Image
 
 from torchvision.datasets.vision import VisionDataset
 
+import cv2
+
 class Iris(VisionDataset):
     """IRIS Dataset.
 
@@ -54,14 +56,18 @@ class Iris(VisionDataset):
             file_path = os.path.join(self.root, file_name)
             with open(file_path, "rb") as f:
                 entry = pickle.load(f, encoding="latin1")
-                self.data.append(entry["data"])
-                if "labels" in entry:
-                    self.targets.extend(entry["labels"])
-                else:
-                    self.targets.extend(entry["fine_labels"])
+                for d in entry["data"]:
+                    self.data.append(d)
+                if False: # manual check data input
+                    check = cv2.vconcat(entry["data"][:32])
+                    cv2.imshow('check', check)
+                    print(f'{entry["labels"][:32]}')
+                    cv2.waitKey(0)
+                for l in entry["labels"]:
+                    self.targets.extend([l])
 
-        self.data = np.vstack(self.data).reshape(-1, 3, 32, 64)
-        self.data = self.data.transpose((0, 2, 3, 1))  # convert to HWC
+        #self.data = np.vstack(self.data).reshape(-1, 3, 32, 64)
+        #self.data = self.data.transpose((0, 3, 2, 1))  # convert to HWC
 
         self._load_meta()
 
@@ -84,6 +90,8 @@ class Iris(VisionDataset):
 
         # doing this so that it is consistent with all other datasets
         # to return a PIL Image
+        #cv2.imshow("data", img)
+        #cv2.waitKey(0)
         img = Image.fromarray(img)
 
         if self.transform is not None:
