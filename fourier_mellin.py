@@ -7,7 +7,7 @@ from numpy.fft import fft2, ifft2
 from math import exp, log, pow
 import json
 import pickle
-import operator
+import re
 
 # Derived from reference code generated as follows:
 #   Prompt: "give me an example implementation of using a fourier-mellin transform to correct for rotation and scale between two images"
@@ -75,13 +75,56 @@ def snap_to_max(img, max_dim):
     snap[offset_y:offset_y + img.shape[0], offset_x:offset_x+img.shape[1]] = img
     return snap
 
+def map_name_to_celltype(cell_name):
+    cell_name = cell_name.lower()
+    cell_match = re.search('__(.*)', cell_name)
+    if cell_match is None:
+        return 'other'
+    nm = cell_match.group(1)
+
+    if nm.startswith('xor') or nm.startswith('xnor'):
+        return 'logic'
+    elif nm.startswith('sed') or nm.startswith('sd') or nm.startswith('df') or nm.startswith('edf'):
+        return 'ff'
+    elif nm.startswith('dly'):
+        return 'logic'
+    elif nm.startswith('dl'): # this must be after 'dly'
+        return 'ff'
+    elif nm.startswith('or') or nm.startswith('nor'):
+        return 'logic'
+    elif nm.startswith('and') or nm.startswith('nand'):
+        return 'logic'
+    elif nm.startswith('mux'):
+        return 'logic'
+    elif nm.startswith('inv') or nm.startswith('einv'):
+        return 'logic'
+    elif nm.startswith('buf') or nm.startswith('ebuf'):
+        return 'logic'
+    elif nm.startswith('fa'):
+        return 'logic'
+    elif nm.startswith('mux'):
+        return 'logic'
+    elif nm.startswith('clk'):
+        return 'logic'
+    elif nm.startswith('a'): # this is last in the if/else chain so more specific patterns evaluate first
+        return 'logic'
+    elif nm.startswith('o'): # this is last in the if/else chain so more specific patterns evaluate first
+        return 'logic'
+    elif nm.startswith('decap'):
+        return 'fill'
+    else:
+        return 'other'
+
+def reduced_types():
+    return ['ff', 'logic', 'fill']
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="IRIS GDS to pixels helper")
     parser.add_argument(
         "--loglevel", required=False, help="set logging level (INFO/DEBUG/WARNING/ERROR)", type=str, default="INFO",
     )
     parser.add_argument(
-        "--name", required=True, help="Base name of file series",
+        "--names", required=True, nargs='+', help="List of base names of file series",
     )
     parser.add_argument(
         "--layer", required=False, help="Layer to process", choices=['poly', 'm1'], default='poly'
@@ -96,111 +139,121 @@ if __name__ == "__main__":
         raise ValueError('Invalid log level: %s' % args.loglevel)
     logging.basicConfig(level=numeric_level)
 
-    name = args.name
+    names = args.names
     layer = args.layer
     tech = args.tech
 
-    # Load two images (they should be grayscale for simplicity)
-    gds_png = cv2.imread(f"imaging/{name}-{layer}.png", cv2.IMREAD_GRAYSCALE)
-    image = cv2.imread(f"imaging/{name}.png", cv2.IMREAD_GRAYSCALE)
+    for name in names:
+        # Load two images (they should be grayscale for simplicity)
+        gds_png = cv2.imread(f"imaging/{name}-{layer}.png", cv2.IMREAD_GRAYSCALE)
+        image = cv2.imread(f"imaging/{name}.png", cv2.IMREAD_GRAYSCALE)
 
-    max_dim = max(max(gds_png.shape), max(image.shape))
-    gds_png_snap = snap_to_max(gds_png, max_dim)
-    image_snap = snap_to_max(image, max_dim)
+        max_dim = max(max(gds_png.shape), max(image.shape))
+        gds_png_snap = snap_to_max(gds_png, max_dim)
+        image_snap = snap_to_max(image, max_dim)
 
-    # Find rotation and scale difference
-    rotation_angle, scale_factor = find_rotation_and_scale(gds_png_snap, image_snap)
-    print(f"Rotation angle: {rotation_angle}, Scale factor: {scale_factor}")
+        # Find rotation and scale difference
+        rotation_angle, scale_factor = find_rotation_and_scale(gds_png_snap, image_snap)
+        print(f"Rotation angle: {rotation_angle}, Scale factor: {scale_factor}")
 
-    # Correct img2 for rotation and scale
-    corrected_image = correct_rotation_and_scale(image_snap, -rotation_angle + 180, 1/scale_factor)
+        # Correct img2 for rotation and scale
+        corrected_image = correct_rotation_and_scale(image_snap, -rotation_angle + 180, 1/scale_factor)
 
-    # now template match the reference onto the image so we can determine the offset
-    corr = cv2.matchTemplate(corrected_image, gds_png, cv2.TM_CCOEFF)
-    _min_val, _max_val, _min_loc, max_loc = cv2.minMaxLoc(corr)
-    # create the composite
-    composite_overlay = np.zeros(corrected_image.shape, np.uint8)
-    composite_overlay[max_loc[1]:max_loc[1] + gds_png.shape[0], max_loc[0]: max_loc[0] + gds_png.shape[1]] = gds_png
-    blended = cv2.addWeighted(corrected_image, 1.0, composite_overlay, 0.5, 0)
+        # now template match the reference onto the image so we can determine the offset
+        corr = cv2.matchTemplate(corrected_image, gds_png, cv2.TM_CCOEFF)
+        _min_val, _max_val, _min_loc, max_loc = cv2.minMaxLoc(corr)
+        # create the composite
+        composite_overlay = np.zeros(corrected_image.shape, np.uint8)
+        composite_overlay[max_loc[1]:max_loc[1] + gds_png.shape[0], max_loc[0]: max_loc[0] + gds_png.shape[1]] = gds_png
+        blended = cv2.addWeighted(corrected_image, 1.0, composite_overlay, 0.5, 0)
 
-    with open(f'imaging/{args.tech}_cells.json', 'r') as f:
-        cell_names = json.load(f)
+        with open(f'imaging/{args.tech}_cells.json', 'r') as f:
+            cell_names = json.load(f)
 
-    with open(f'imaging/{name}-{layer}_lib.json', 'r') as f:
-        cells = json.load(f)
+        with open(f'imaging/{name}-{layer}_lib.json', 'r') as f:
+            cells = json.load(f)
 
-    # check alignment by drawing the rectangles
-    cell_overlay = np.zeros(corrected_image.shape, np.uint8)
-    max_x = 0
-    max_y = 0
-    entry = {}
-    entry['labels'] = []
-    entry['data'] = []
-    labels = {} # this is no longer used, we pull the label index from the master label list
-    label_count = 0
-    for cell in cells.values():
-        if cell[2] not in labels:
-            labels[cell[2]] = label_count
-            label_count += 1
-        cv2.rectangle(
-            cell_overlay,
-            [cell[0][0][0] + max_loc[0], cell[0][0][1] + max_loc[1]],
-            [cell[0][1][0] + max_loc[0], cell[0][1][1] + max_loc[1]],
-            cell[1]
-        )
-        # this is used to sanity check the statically coded dimensions of the x/y image crops
-        if abs(cell[0][0][0] - cell[0][1][0]) > max_x:
-            max_x = abs(cell[0][0][0] - cell[0][1][0])
-        if abs(cell[0][0][1] - cell[0][1][1]) > max_y:
-            max_y = abs(cell[0][0][1] - cell[0][1][1])
+        # check alignment by drawing the rectangles
+        cell_overlay = np.zeros(corrected_image.shape, np.uint8)
+        max_x = 0
+        max_y = 0
+        entry = {}
+        entry['labels'] = []
+        entry['data'] = []
+        labels = {} # this is no longer used, we pull the label index from the master label list
+        label_count = 0
+        for cell in cells.values():
+            if cell[2] not in labels:
+                labels[cell[2]] = label_count
+                label_count += 1
+            cv2.rectangle(
+                cell_overlay,
+                [cell[0][0][0] + max_loc[0], cell[0][0][1] + max_loc[1]],
+                [cell[0][1][0] + max_loc[0], cell[0][1][1] + max_loc[1]],
+                cell[1]
+            )
+            # this is used to sanity check the statically coded dimensions of the x/y image crops
+            if abs(cell[0][0][0] - cell[0][1][0]) > max_x:
+                max_x = abs(cell[0][0][0] - cell[0][1][0])
+            if abs(cell[0][0][1] - cell[0][1][1]) > max_y:
+                max_y = abs(cell[0][0][1] - cell[0][1][1])
 
-        # extract a rectangle around the center of each standard cell and save it in a labelled training set
-        data = np.zeros((32, 64, 3), dtype=np.uint8)
-        center_x = (cell[0][0][0] + cell[0][1][0]) // 2
-        center_y = (cell[0][0][1] + cell[0][1][1]) // 2
-        if center_y - 16 >= 0 and center_y + 16 < corrected_image.shape[0] \
-           and center_x - 32 >= 0 and center_x + 32 < corrected_image.shape[1]:
-            data = cv2.cvtColor(corrected_image[center_y - 16:center_y + 16, center_x - 32:center_x + 32], cv2.COLOR_GRAY2RGB)
-            # cv2.imshow('data', data)
-            # cv2.waitKey(0)
-            try:
-                label_index = cell_names.index(cell[2])
-            except ValueError:
-                print(f'Cell not in master cell list: {cell[2]}; skipping')
-                continue
-            entry['labels'].append(label_index) # substitute with a numeric value so it can be converted to a tensor
-            entry['data'].append(data)
+            # extract a rectangle around the center of each standard cell and save it in a labelled training set
+            data = np.zeros((32, 64, 3), dtype=np.uint8)
+            center_x = (cell[0][0][0] + cell[0][1][0]) // 2 + max_loc[0]
+            center_y = (cell[0][0][1] + cell[0][1][1]) // 2 + max_loc[1]
+            if center_y - 16 >= 0 and center_y + 16 < corrected_image.shape[0] \
+            and center_x - 32 >= 0 and center_x + 32 < corrected_image.shape[1]:
+                data = cv2.cvtColor(corrected_image[center_y - 16:center_y + 16, center_x - 32:center_x + 32], cv2.COLOR_GRAY2RGB)
+                try:
+                    reduced_name = map_name_to_celltype(cell[2])
+                except ValueError:
+                    print(f'Cell not in master cell list: {cell[2]}; skipping')
+                    continue
+                if reduced_name != 'other': # throw out the "other" label
+                    label_index = reduced_types().index(reduced_name)
+                    entry['labels'].append(label_index) # substitute with a numeric value so it can be converted to a tensor
+                    entry['data'].append(data)
 
-    # dump the data into pickle files for consumption by downstream CNN pipeline
-    print(f'max_x: {max_x}, max_y: {max_y}')
-    with open(f'imaging/{name}-{layer}.pkl', 'wb') as f:
-        pickle.dump(entry, f)
-    meta = {
-        'num_cases_per_batch' : len(entry['data']),
-        'label_names' : cell_names,
-        'num_vis' : 64 * 32 * 3,
-    }
-    with open(f'imaging/{name}-{layer}.meta', 'wb') as f:
-        pickle.dump(meta, f)
+                    if False: # manual check data extraction
+                        blended_rect = cv2.addWeighted(corrected_image, 1.0, cell_overlay, 0.5, 0)
+                        cv2.imshow("Rectangles", blended_rect)
+                        cv2.imshow('data', data)
+                        print(f'{reduced_name}: {label_index}')
+                        cv2.waitKey(0)
 
-    # Quality check the alignment
-    blended_rect = cv2.addWeighted(corrected_image, 1.0, cell_overlay, 0.5, 0)
+        # dump the data into pickle files for consumption by downstream CNN pipeline
+        print(f'max_x: {max_x}, max_y: {max_y}')
+        for i in range(len(reduced_types())):
+            print(f"{reduced_types()[i]}: {entry['labels'].count(i)}")
+        with open(f'imaging/{name}-{layer}.pkl', 'wb') as f:
+            pickle.dump(entry, f)
+        meta = {
+            'num_cases_per_batch' : len(entry['data']),
+            'label_names' : reduced_types(),
+            'num_vis' : 64 * 32 * 3,
+        }
+        with open(f'imaging/{name}-{layer}.meta', 'wb') as f:
+            pickle.dump(meta, f)
 
-    # Display the corrected image
-    # cv2.imshow("Corrected Image", corrected_img2)
-    # cv2.imshow("Reference image", img1)
-    cv2.imshow("Correlation", cv2.normalize(corr, None, alpha=0, beta=255, norm_type=cv2.NORM_MINMAX, dtype=cv2.CV_8U))
-    cv2.imshow("Composite", blended)
-    cv2.imshow("Rectangles", blended_rect)
-    cv2.waitKey(0)
+        # Quality check the alignment
+        blended_rect = cv2.addWeighted(corrected_image, 1.0, cell_overlay, 0.5, 0)
 
-    # Now read in the JSON file with cell locations, and use this to create a training set of data
-    # This consists of:
-    #  - A monochrome rectangle that defines the region of interest; the color is correlated to the gate type
-    #  - The underlying source image, cropped to a fixed size that represents the maximum search window for a
-    #    gate of any size (equal to the biggest standard cell plus some alignment margin)
-    #  - The representation of the "true gate" as a black and white image, correlated to the source image
-    #
-    # The input to the classifier would be a source image area, that is the same as the fixed size used in training
-    # The output of the classifier is a tensor of potential gate matches, which we will threshold into "most likely match"
+        # Display the corrected image
+        # cv2.imshow("Corrected Image", corrected_img2)
+        # cv2.imshow("Reference image", img1)
+        cv2.imshow("Correlation", cv2.normalize(corr, None, alpha=0, beta=255, norm_type=cv2.NORM_MINMAX, dtype=cv2.CV_8U))
+        cv2.imshow("Composite", blended)
+        cv2.imshow("Rectangles", blended_rect)
+        cv2.waitKey(0)
+
+        # Now read in the JSON file with cell locations, and use this to create a training set of data
+        # This consists of:
+        #  - A monochrome rectangle that defines the region of interest; the color is correlated to the gate type
+        #  - The underlying source image, cropped to a fixed size that represents the maximum search window for a
+        #    gate of any size (equal to the biggest standard cell plus some alignment margin)
+        #  - The representation of the "true gate" as a black and white image, correlated to the source image
+        #
+        # The input to the classifier would be a source image area, that is the same as the fixed size used in training
+        # The output of the classifier is a tensor of potential gate matches, which we will threshold into "most likely match"
 
