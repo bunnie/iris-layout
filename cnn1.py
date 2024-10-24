@@ -18,6 +18,16 @@ import cifar
 #      - Refine the CNN to match our use case: right now the intermediate layers
 #        are optimized for a task that's not ours (handwriting recognition)
 #      - Maybe need to eliminate extremely small fill from the training set?
+#      - Alternatively, do we specify a cell size? Need to think about what
+#        that even means.
+#          - Maybe what we want in the end is a classifier that
+#            given a patch of image, guesses how many of what type of cell are in
+#            a region with a certain probability?
+#          - The underlying issue is that cell sizes are quite different in scale,
+#            and the size of the cell matters. The problem is the current CNN
+#            is designed explicitly to disregard scale (written numbers have
+#            the same meaning regardless of size), so again, need to tune the CNN
+#            to throw away the part that allows us to scale an object.
 
 PATH = './iris_net.pth'
 
