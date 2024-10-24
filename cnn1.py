@@ -9,6 +9,15 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 import iris_dataset
+import cifar
+
+# Current strategy:
+#   Just try to tell between ff, logic, fill, other
+#      - Reduce input channels from RGB to just gray - how to do that? This
+#        should reduce the # of parameters we need to tune
+#      - Refine the CNN to match our use case: right now the intermediate layers
+#        are optimized for a task that's not ours (handwriting recognition)
+#      - Maybe need to eliminate extremely small fill from the training set?
 
 PATH = './iris_net.pth'
 
@@ -28,7 +37,7 @@ class Net(nn.Module):
         #self.fc1 = nn.Linear(16 * 5 * 5, 120)
         self.fc1 = nn.Linear(1040, 120) # BUT WHY
         self.fc2 = nn.Linear(120, 84)
-        self.fc3 = nn.Linear(84, 438) # set to number of classes
+        self.fc3 = nn.Linear(84, 3) # set to number of classes
 
     def forward(self, x):
         x = self.pool(F.relu(self.conv1(x)))
@@ -46,6 +55,8 @@ if __name__ == "__main__":
 
     batch_size = 4
 
+    #debugset = cifar.CIFAR10(root='./data', train=True, download=True, transform=transform)
+    #debugloader = torch.utils.data.DataLoader(debugset, batch_size=batch_size, shuffle=True, num_workers=2)
     import pickle
     from typing import Any
     data: Any = []
@@ -62,7 +73,14 @@ if __name__ == "__main__":
     testloader = torch.utils.data.DataLoader(testset, batch_size=batch_size,
                                             shuffle=False, num_workers=2)
 
-    classes = ("sky130_ef_sc_hd__decap_12", "sky130_fd_sc_hd__buf_1", "sky130_fd_sc_hd__buf_12", "sky130_fd_sc_hd__buf_16", "sky130_fd_sc_hd__buf_2", "sky130_fd_sc_hd__buf_4",)
+    classes = ('ff', 'logic', 'fill')
+
+    dataiter = iter(trainloader)
+    images, labels = next(dataiter)
+
+    # print images
+    print('Image check: ', ' '.join(f'{classes[labels[j]]:5s}' for j in range(batch_size)))
+    imshow(torchvision.utils.make_grid(images))
 
     if True:
         net = Net()
@@ -100,7 +118,7 @@ if __name__ == "__main__":
         print('Finished Training')
 
         torch.save(net.state_dict(), PATH)
-    if False:
+    if True:
         net = Net()
         device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
         # Assuming that we are on a CUDA machine, this should print a CUDA device:
@@ -112,8 +130,8 @@ if __name__ == "__main__":
         images, labels = next(dataiter)
 
         # print images
-        imshow(torchvision.utils.make_grid(images))
         print('GroundTruth: ', ' '.join(f'{classes[labels[j]]:5s}' for j in range(4)))
+        imshow(torchvision.utils.make_grid(images))
 
         images_cuda = images.to(device)
         outputs = net(images_cuda)
@@ -137,7 +155,7 @@ if __name__ == "__main__":
                 total += labels_cuda.size(0)
                 correct += (predicted == labels_cuda).sum().item()
 
-        print(f'Accuracy of the network on the 10000 test images: {100 * correct // total} %')
+        print(f'Accuracy of the network on the test images: {100 * correct // total} %')
 
         # prepare to count predictions for each class
         correct_pred = {classname: 0 for classname in classes}
