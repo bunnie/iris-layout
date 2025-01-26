@@ -11,6 +11,23 @@ import numpy as np
 import iris_dataset
 import cifar
 
+# Dataset generation notes
+#  For any brand new block, you need to extract an idealized PNG of the layout from design
+#  data (e.g., GDS file)
+#    1. Extract the GDS of the layer & sub-block of interest using klayout. Put it in
+#       imaging/blockname-layer.png, e.g. imaging/wrapped_snn_network-poly.gds. The techfile
+#       argument is required and is "--tech sky130" for the open source data set. Note that
+#       the default layer is "poly" (which is correct for SKY130)
+#    2. Run "gds_to_png.py". This will automatically search for all .gds files in imaging/
+#       and generate idealized versions of the layers for reference alignment.
+#
+#  With the block image, GDS data and idealized layout image, you can now create the data set:
+#    1. Run "extract_dataset.py" with the names of the blocks that you want to generate
+#       data for, i.e. "--names wrapped_snn_network"
+#
+#    This will generate a .pkl file with the dataset, and a .meta file with a description
+#    of the training data set.
+
 # Current strategy:
 #   Just try to tell between ff, logic, fill, other
 #      - Reduce input channels from RGB to just gray - how to do that? This
