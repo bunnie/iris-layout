@@ -18,6 +18,7 @@ from prims import Rect, Point
 # and facts and expressed it in my own style.
 
 DEF_TO_PIXELS_VERSION = '1.0.0'
+SMALL_THRESH = 150
 
 class Leaf():
     def __init__(self, d, name):
@@ -95,7 +96,7 @@ class Design():
                         skip = False
                         for token in tokens:
                             if comp_state == 'SEARCH':
-                                if token == 'PLACED' or token == 'FIXED':
+                                if token == 'PLACED' or token == 'FIXED' or token == 'COVER':
                                     comp_state = 'PLACED'
                                 elif token == 'SOURCE':
                                     comp_state = 'SOURCE'
@@ -329,17 +330,28 @@ class Design():
             0x22 : 'GENERATIONS',
             0x23 : 'ATTRATABLE',
             0x26 : 'ELFLAGS',
+            0x27 : 'ELKEY',
+            0x28 : 'LINKTYPE',
+            0x29 : 'LINKKEYS',
             0x2A : 'NODETYPE',
             0x2B : 'PROPATTR',
             0x2C : 'PROPVALUE',
             0x2D : 'BOX',
             0x2E : 'BOXTYPE',
             0x2F : 'PLEX',
+            0x30 : 'BGNEXTN',
+            0x31 : 'ENDEXTN',
             0x32 : 'TAPENUM',
             0x33 : 'TAPECODE',
+            0x34 : 'STRCLASS',
             0x36 : 'FORMAT',
             0x37 : 'MASK',
-            0x38 : 'ENDMASKS'
+            0x38 : 'ENDMASKS',
+            0x39 : 'LIBDIRSIZE',
+            0x3A : 'SRFNAME',
+            0x3B : 'LIBSECUR',
+            0x5A : 'RAITHMBMSPATH',
+            0x62 : 'RAITHPXXDATA'
         }
         self.design_json = self.df.with_name(self.df.stem + '.json')
         if not self.design_json.is_file():
@@ -356,6 +368,8 @@ class Design():
             else:
                 logging.error(f"Unhandled design extension {self.extension}")
                 assert False
+            with open(self.design_json, 'r') as db_file:
+                self.schema = json.loads(db_file.read())
         else:
             with open(self.design_json, 'r') as db_file:
                 self.schema = json.loads(db_file.read())
@@ -581,6 +595,7 @@ class Design():
             logging.warning(f"Couldn't merge sub-block {d.name} into {self.name}")
 
     def generate_missing(self, missing_cells, tm, function=False):
+        warned_cell = {}
         for missing_cell in missing_cells:
             def_file = self.design_path / (missing_cell['cell'] + '.def')
             if def_file.exists(): # prefer DEF over GDS
@@ -590,7 +605,10 @@ class Design():
                 if gds_file.exists():
                     d = Design(gds_file, self.pix_per_um)
                 else:
-                    logging.warning(f"Couldn't find design file for {missing_cell['cell']}")
+                    if missing_cell['cell'] not in warned_cell:
+                        warned_cell[missing_cell['cell']] = 1
+                    else:
+                        warned_cell[missing_cell['cell']] += 1
                     continue
             tm.gather_stats(d)
             if function:
@@ -600,6 +618,7 @@ class Design():
             if len(next_missing) > 0:
                 d.generate_missing(next_missing, tm, function)
             self.merge_subdesign(d, missing_cell, function)
+        logging.warning(f"Couldn't find design file for {warned_cell}")
 
     # build a hierarchy from the 'def' file. Relies on the hierarchy using '/' separators for cell names.
     # TODO: make the hierarchy separator dependent on the `tech` library
@@ -700,10 +719,16 @@ class Design():
                 self.clusters[path + '/' + k] = self.flatten_region(v)
             else:
                 # TODO: create special-case clustering rules dependent on the tech lib
-                if count > self.threshold or k == 'sce' or k == 'u__coresys_vexsys' or k == 'vextop':
+                if (count < SMALL_THRESH) and path + '_leaves' in self.clusters:
+                    # stick it into the previous hierarchy level's block
+                    self.clusters[path + '_leaves'] += self.flatten_region(v)
+                elif count > self.threshold or k == 'sce' or k == 'u__coresys_vexsys' or k == 'vextop' or k == 'u__gen_pers_bio':
                     self.recurse_cluster_hierarchy(v, path + '/' + k)
                 else:
-                    self.clusters[path + '/' + k] = self.flatten_region(v)
+                    if path + '/' + k in self.clusters:
+                        self.clusters[path + '/' + k] += self.flatten_region(v)
+                    else:
+                        self.clusters[path + '/' + k] = self.flatten_region(v)
 
     # prune small/misc leaves from the hierarchy by merging them into parents or a catch-all 'misc' key
     def merge_leaves(self):
@@ -725,7 +750,7 @@ class Design():
                 leaf_keys += [c]
         misc_cells = []
         for l in leaf_keys:
-            if len(self.clusters[l]) < 50:
+            if len(self.clusters[l]) < SMALL_THRESH:
                 misc_cells += self.clusters[l]
                 del self.clusters[l]
         self.clusters['misc'] = misc_cells
