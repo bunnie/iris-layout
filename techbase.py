@@ -69,20 +69,32 @@ class TechBase():
                 except:
                     pass
             else:
-                if self.is_ff(data['cell']):
+                ff_cnt = self.is_ff(data['cell'])
+                if ff_cnt != 0:
                     try:
                         s = self.tech.schema['cells'][data['cell']]['size']
                         self.stats['ff'] += s[0] * s[1]
-                        self.stats_count['ff'] += 1
+                        self.stats_count['ff'] += ff_cnt
                     except:
                         logging.debug(f"non-primitive cell: {data['cell']}")
                 else:
-                    try:
-                        s = self.tech.schema['cells'][data['cell']]['size']
-                        self.stats['logic'] += s[0] * s[1]
-                        self.stats_count['logic'] += 1
-                    except:
-                        logging.debug(f"non-primitive cell: {data['cell']}")
+                    # this covers the tsmc22ull style names. I think it doesn't conflict with the other base types?
+                    ctype = self.map_name_to_celltype(data['cell'])
+                    if ctype == 'fill' or ctype == 'other':
+                        try:
+                            s = self.tech.schema['cells'][data['cell']]['size']
+                            self.stats[ctype] += s[0] * s[1]
+                            self.stats_count[ctype] += 1
+                        except:
+                            logging.debug(f"non-primitive cell: {data['cell']}")
+                    else:
+                        try:
+                            s = self.tech.schema['cells'][data['cell']]['size']
+                            self.stats['logic'] += s[0] * s[1]
+                            self.stats_count['logic'] += 1
+                        except:
+                            logging.debug(f"non-primitive cell: {data['cell']}")
+
 
     def print_stats(self):
             pp = pprint.PrettyPrinter(indent=2)
