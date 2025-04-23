@@ -45,6 +45,8 @@ class Schema():
             with open(file, 'r') as lef_file:
                 for line in lef_file:
                     line = line.strip().lstrip()
+                    if line.lstrip().startswith('#'):
+                        continue
                     if state == 'FIND_MACRO':
                         if 'MACRO' in line:
                             name = re.split('\s+', line)[1]
