@@ -27,7 +27,10 @@ class Tech(TechBase):
         super().__init__(args)
 
     def is_ff(self, cell_name):
-        return 'ff' in cell_name
+        if 'ff' in cell_name:
+            return 1
+        else:
+            return 0
 
     def map_name_to_celltype(self, cell_name):
         cell_name = cell_name.lower()
