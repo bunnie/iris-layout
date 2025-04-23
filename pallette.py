@@ -37,25 +37,30 @@ class HashPallette():
             # now use the subtype to pick a color category
             hsv_color = self.next_color[mf][mn]
             # modulate the v based on the orientation
-            if orientation == 'N':
-                v = 255
-            elif orientation == 'S':
-                v = 255 - 16
-            elif orientation == 'W':
-                v = 255 - 32
-            elif orientation == 'E':
-                v = 255 - 48
-            elif orientation == 'FN':
-                v = 255 - 64
-            elif orientation == 'FS':
-                v = 255 - 80
-            elif orientation == 'FW':
-                v = 255 - 96
-            elif orientation == 'FE':
-                v = 255 - 128
+            if False:
+                if orientation == 'N':
+                    v = 255
+                elif orientation == 'S':
+                    v = 255 - 16
+                elif orientation == 'W':
+                    v = 255 - 32
+                elif orientation == 'E':
+                    v = 255 - 48
+                elif orientation == 'FN':
+                    v = 255 - 64
+                elif orientation == 'FS':
+                    v = 255 - 80
+                elif orientation == 'FW':
+                    v = 255 - 96
+                elif orientation == 'FE':
+                    v = 255 - 128
+                else:
+                    logging.error(f"unknown orientation: {orientation}")
+                    assert False # cause a crash
+            if mn == 'fill':
+                v = 64
             else:
-                logging.error(f"unknown orientation: {orientation}")
-                assert False # cause a crash
+                v = 210
             hsv_color[2] = v
 
             # update to the next color in the series
