@@ -378,6 +378,7 @@ class Design():
         die_ur = self.schema['die_area_ur']
         die = Rect(Point(die_ll[0], die_ll[1]), Point(die_ur[0], die_ur[1]))
         self.canvas = np.zeros((int(die.height() * self.pix_per_um), int(die.width() * self.pix_per_um), 3), dtype=np.uint8)
+        self.canvas_redact = np.zeros((int(die.height() * self.pix_per_um), int(die.width() * self.pix_per_um), 3), dtype=np.uint8)
         self.functions = np.zeros((int(die.height() * self.pix_per_um), int(die.width() * self.pix_per_um), 3), dtype=np.uint8)
         self.labels = np.zeros((int(die.height() * self.pix_per_um), int(die.width() * self.pix_per_um), 3), dtype=np.uint8)
 
@@ -392,6 +393,7 @@ class Design():
             if do_progress:
                 progress.update(count)
             color = tech.pallette.str_to_rgb(data['cell'], data['orientation'])
+            cell_type = tech.map_name_to_celltype(data['cell'])
             loc = data['loc']
             try:
                 cell_size = tech.tech.schema['cells'][data['cell']]['size']
@@ -399,17 +401,29 @@ class Design():
                 missing_cells += [data]
                 continue
             if self.redact:
-                area = cell_size[1] * cell_size[0] * self.pix_per_um * self.pix_per_um
+                # noise added as an obfuscation measure to protect underlying std cell library details
+                area = cell_size[1] * cell_size[0] * self.pix_per_um * self.pix_per_um * random.uniform(0.7, 1.0) * 0.5
                 radius = ceil(sqrt(area / pi))
-                cv2.circle(
-                    self.canvas,
-                    (int(((loc[0] + (cell_size[0] // 2)) * self.pix_per_um)),
-                     int(((loc[1] + (cell_size[1] // 2)) * self.pix_per_um))
-                    ),
-                    radius,
-                    color,
-                    thickness=1,
-                )
+                if cell_type == 'fill':
+                    cv2.circle(
+                        self.canvas,
+                        (int(((loc[0] + (cell_size[0] // 2)) * self.pix_per_um)),
+                        int(((loc[1] + (cell_size[1] // 2)) * self.pix_per_um))
+                        ),
+                        radius,
+                        color,
+                        thickness=-1,
+                    )
+                else:
+                    cv2.circle(
+                        self.canvas_redact,
+                        (int(((loc[0] + (cell_size[0] // 2)) * self.pix_per_um)),
+                        int(((loc[1] + (cell_size[1] // 2)) * self.pix_per_um))
+                        ),
+                        radius,
+                        color,
+                        thickness=-1,
+                    )
             else:
                 tl = (
                     int(loc[0] * self.pix_per_um),
@@ -544,6 +558,17 @@ class Design():
         tech.pallette.save(str(self.df.with_name(self.df.stem)) + '_pallette.json')
 
     def save_layout(self):
+        if self.redact:
+            mask = cv2.cvtColor(self.canvas_redact, cv2.COLOR_BGR2GRAY)
+            _, mask = cv2.threshold(mask, 1, 255, cv2.THRESH_BINARY)
+            # Invert mask to get black areas
+            mask_inv = cv2.bitwise_not(mask)
+            # Black-out the area on bottom where top will be placed
+            bottom_bg = cv2.bitwise_and(self.canvas, self.canvas, mask=mask_inv)
+            # Take only the colored part of the top image
+            top_fg = cv2.bitwise_and(self.canvas_redact, self.canvas_redact, mask=mask)
+            # Combine the two
+            self.canvas = cv2.add(bottom_bg, top_fg)
         cv2.imwrite(str(self.df.with_name(self.df.stem + '.png')), self.canvas)
         cv2.imwrite(str(self.df.with_name(self.df.stem + '_function.png')), self.functions)
 
