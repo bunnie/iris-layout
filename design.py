@@ -19,6 +19,7 @@ from prims import Rect, Point
 
 DEF_TO_PIXELS_VERSION = '1.0.0'
 SMALL_THRESH = 150
+INSITU_THRESH = 10*10
 
 class Leaf():
     def __init__(self, d, name):
@@ -100,14 +101,15 @@ class Design():
                                     comp_state = 'PLACED'
                                 elif token == 'SOURCE':
                                     comp_state = 'SOURCE'
-                                elif token == ';':
-                                    if not skip:
-                                        self.schema['cells'][name] = {
-                                            'cell': cell,
-                                            'loc' : [x, y],
-                                            'orientation' : orientation
-                                        }
-                                    comp_state = 'END'
+                                # Commented out because not all cells of interest end in a ';'
+                                # elif token == ';':
+                                #     if not skip:
+                                #         self.schema['cells'][name] = {
+                                #             'cell': cell,
+                                #             'loc' : [x, y],
+                                #             'orientation' : orientation
+                                #         }
+                                #     comp_state = 'END'
                             elif comp_state == 'PLACED':
                                 assert token == '('
                                 comp_state = 'PLACED_X'
@@ -122,7 +124,16 @@ class Design():
                                 comp_state = 'PLACED_ORIENTATION'
                             elif comp_state == 'PLACED_ORIENTATION':
                                 orientation = token
-                                comp_state = 'SEARCH'
+                                # Added because PLACED_ORIENTATION is by fiat the last item in the description
+                                # and at least for the .def files we're interested in parsing, it is consistent.
+                                if not skip:
+                                    self.schema['cells'][name] = {
+                                        'cell': cell,
+                                        'loc' : [x, y],
+                                        'orientation' : orientation
+                                    }
+                                comp_state = 'END'
+                                # comp_state = 'SEARCH'
 
                             elif comp_state == 'SOURCE':
                                 if token != 'DIST' and token != 'NETLIST':
@@ -381,6 +392,7 @@ class Design():
         self.canvas_redact = np.zeros((int(die.height() * self.pix_per_um), int(die.width() * self.pix_per_um), 3), dtype=np.uint8)
         self.functions = np.zeros((int(die.height() * self.pix_per_um), int(die.width() * self.pix_per_um), 3), dtype=np.uint8)
         self.labels = np.zeros((int(die.height() * self.pix_per_um), int(die.width() * self.pix_per_um), 3), dtype=np.uint8)
+        self.insitu = np.zeros((int(die.height() * self.pix_per_um), int(die.width() * self.pix_per_um), 3), dtype=np.uint8)
 
     def render_layer(self, tech):
         do_progress = len(self.schema['cells'].keys()) > 1000
@@ -425,6 +437,8 @@ class Design():
                         thickness=-1,
                     )
             else:
+                if cell_size[0] * cell_size[1] > INSITU_THRESH:
+                    color = (22.0, 18.0, 18.0)
                 tl = (
                     int(loc[0] * self.pix_per_um),
                     int((loc[1] + cell_size[1]) * self.pix_per_um),
@@ -440,6 +454,32 @@ class Design():
                     color,
                     thickness = -1,
                 )
+                if cell_size[0] * cell_size[1] > INSITU_THRESH:
+                    font_scale = 0.5
+                    thickness = 1
+                    font_face = cv2.FONT_HERSHEY_SIMPLEX
+                    centroid = np.median([tl, br], axis=0)
+                    centroid = (int(centroid[0]), int(centroid[1]))
+                    expanded_name = data['cell']
+                    ((w, h), baseline) = cv2.getTextSize(expanded_name, font_face, font_scale, thickness)
+                    cv2.rectangle(
+                        self.insitu,
+                        (centroid[0] - w // 2, centroid[1] + baseline - h // 2),
+                        (centroid[0] - w // 2 + w, centroid[1] - h - baseline - h // 2),
+                        (255, 255, 255),
+                        thickness = -1,
+                        lineType = cv2.LINE_8
+                    )
+                    cv2.putText(
+                        self.insitu,
+                        expanded_name,
+                        (centroid[0] - w // 2, centroid[1] - h // 2),
+                        font_face,
+                        font_scale,
+                        color,
+                        thickness,
+                        bottomLeftOrigin=False
+                    )
         if do_progress:
             progress.finish()
         return missing_cells
@@ -551,6 +591,7 @@ class Design():
         cv2.copyTo(
             self.labels, self.labels, self.functions
         )
+        self.canvas = cv2.addWeighted(self.canvas, 1.0, self.insitu, 1.0, 0.0)
         return mc
 
     def generate_legend(self, tech):
